@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Apartment } from './entities/apartment.entity';
@@ -24,7 +24,12 @@ export class ApartmentsService {
 
   async create(dto: CreateApartmentDto): Promise<Apartment> {
     const item = this.repository.create(dto);
-    return this.repository.save(item);
+    try {
+      return await this.repository.save(item);
+    } catch (err: any) {
+      if (err?.code === '23505') throw new ConflictException('Apartment with this tower and number already exists');
+      throw err;
+    }
   }
 
   async update(id: string, dto: UpdateApartmentDto): Promise<Apartment> {

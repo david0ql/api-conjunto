@@ -43,13 +43,12 @@ export class ReservationsService {
     return this.repository.save(item);
   }
 
-  async updateStatus(id: string, statusId: string, notes?: string): Promise<Reservation> {
-    const item = await this.findOne(id);
-    item.statusId = statusId;
-    if (notes !== undefined) {
-      item.notesByAdministrator = notes;
-    }
-    return this.repository.save(item);
+  async updateStatus(id: string, statusId: string, notesByAdministrator?: string): Promise<Reservation> {
+    await this.findOne(id); // throws 404 if not found
+    const updateData: Partial<Reservation> = { statusId };
+    if (notesByAdministrator !== undefined) updateData.notesByAdministrator = notesByAdministrator;
+    await this.repository.update(id, updateData);
+    return this.findOne(id);
   }
 
   async remove(id: string): Promise<void> {

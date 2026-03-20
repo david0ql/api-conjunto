@@ -43,9 +43,9 @@ export class ReservationsController {
   @UseGuards(AdminGuard)
   updateStatus(
     @Param('id') id: string,
-    @Body() body: { statusId: string; notes?: string },
+    @Body() body: { statusId: string; notesByAdministrator?: string },
   ) {
-    return this.service.updateStatus(id, body.statusId, body.notes);
+    return this.service.updateStatus(id, body.statusId, body.notesByAdministrator);
   }
 
   @Delete(':id')

@@ -11,9 +11,11 @@ import { Employee } from '../employees/entities/employee.entity';
 @Module({
   imports: [
     PassportModule,
-    JwtModule.register({
-      secret: process.env.JWT_SECRET ?? 'fallback-secret',
-      signOptions: { expiresIn: (process.env.JWT_EXPIRES_IN ?? '7d') as any },
+    JwtModule.registerAsync({
+      useFactory: () => ({
+        secret: process.env.JWT_SECRET ?? 'fallback-secret',
+        signOptions: { expiresIn: (process.env.JWT_EXPIRES_IN ?? '7d') as any },
+      }),
     }),
     TypeOrmModule.forFeature([Resident, Employee]),
   ],
