@@ -17,6 +17,7 @@ type PoolReportFilters = {
 };
 
 type PdfDocument = InstanceType<typeof PDFDocument>;
+const PDF_FOOTER_RESERVE = 18;
 
 @Injectable()
 export class PoolEntriesService {
@@ -383,7 +384,6 @@ export class PoolEntriesService {
       ['Entradas en el rango', `${summary.entriesInRange}`, 'Cantidad total de registros que cumplen el período seleccionado.'],
       ['Invitados en el rango', `${summary.guestsInRange}`, 'Total de acompañantes nominales vinculados a los ingresos.'],
       ['Residentes únicos', `${summary.uniqueResidents}`, 'Número de residentes distintos presentes dentro del período analizado.'],
-      ['Filas exportadas', `${exportableEntries}`, 'Registros que aparecen en la tabla detallada del reporte.'],
     ];
 
     doc
@@ -397,8 +397,10 @@ export class PoolEntriesService {
     doc.rect(left, currentY, 700, 22).fill('#111111');
     doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#ffffff');
     columns.forEach((column) => {
-      doc.text(column.label.toUpperCase(), currentX + 8, currentY + 7, {
-        width: column.width - 10,
+      this.drawCenteredCellText(doc, column.label.toUpperCase(), currentX + 8, currentY, column.width - 10, 22, {
+        font: 'Helvetica-Bold',
+        fontSize: 8.5,
+        color: '#ffffff',
       });
       currentX += column.width;
     });
@@ -410,10 +412,11 @@ export class PoolEntriesService {
       doc
         .rect(left, currentY, 700, rowHeight)
         .fillAndStroke(rowIndex % 2 === 0 ? '#f7f7f7' : '#ffffff', '#d5d5d5');
-      doc.font('Helvetica').fontSize(8.5).fillColor('#111111');
       row.forEach((value, index) => {
-        doc.text(value, currentX + 8, currentY + 7, {
-          width: columns[index].width - 12,
+        this.drawCenteredCellText(doc, value, currentX + 8, currentY, columns[index].width - 12, rowHeight, {
+          font: 'Helvetica',
+          fontSize: 8.5,
+          color: '#111111',
         });
         currentX += columns[index].width;
       });
@@ -444,12 +447,12 @@ export class PoolEntriesService {
     ];
 
     doc.rect(34, y, 757, 24).fill('#111111');
-    doc.font('Helvetica-Bold').fontSize(8).fillColor('#ffffff');
 
     columns.forEach((column) => {
-      doc.text(column.label.toUpperCase(), column.x + 8, y + 8, {
-        width: column.width - 12,
-        ellipsis: true,
+      this.drawCenteredCellText(doc, column.label.toUpperCase(), column.x + 8, y, column.width - 12, 24, {
+        font: 'Helvetica-Bold',
+        fontSize: 8,
+        color: '#ffffff',
       });
     });
 
@@ -457,7 +460,7 @@ export class PoolEntriesService {
   }
 
   private ensureTablePage(doc: PdfDocument, rowHeight: number, rangeLabel: string, generatedAt: string) {
-    if (doc.y + rowHeight + 46 <= doc.page.height - 34) {
+    if (doc.y + rowHeight + 12 <= doc.page.height - doc.page.margins.bottom - PDF_FOOTER_RESERVE) {
       return;
     }
 
@@ -468,6 +471,7 @@ export class PoolEntriesService {
 
   private calculateRowHeight(doc: PdfDocument, values: string[]) {
     const widths = [194, 88, 108, 198, 105];
+    doc.font('Helvetica').fontSize(8.5);
     const heights = values.map((value, index) =>
       doc.heightOfString(value, {
         width: widths[index],
@@ -475,7 +479,7 @@ export class PoolEntriesService {
       }),
     );
 
-    return Math.max(28, Math.max(...heights) + 12);
+    return Math.max(30, Math.max(...heights) + 14);
   }
 
   private drawTableRow(doc: PdfDocument, values: string[], shaded: boolean, rowHeight: number) {
@@ -492,10 +496,11 @@ export class PoolEntriesService {
       .rect(34, y, 757, rowHeight)
       .fillAndStroke(shaded ? '#f7f7f7' : '#ffffff', '#dcdcdc');
 
-    doc.font('Helvetica').fontSize(8.5).fillColor('#1a1a1a');
     values.forEach((value, index) => {
-      doc.text(value, columns[index].x + 8, y + 6, {
-        width: columns[index].width - 12,
+      this.drawCenteredCellText(doc, value, columns[index].x + 8, y, columns[index].width - 12, rowHeight, {
+        font: 'Helvetica',
+        fontSize: 8.5,
+        color: '#1a1a1a',
       });
     });
 
@@ -503,16 +508,42 @@ export class PoolEntriesService {
   }
 
   private drawPdfFooter(doc: PdfDocument) {
-    const footerY = doc.page.height - 28;
+    const footerY = doc.page.height - doc.page.margins.bottom - PDF_FOOTER_RESERVE;
     doc
       .font('Helvetica')
-      .fontSize(8)
+      .fontSize(7.2)
       .fillColor('#777777')
       .text(
-        'Conjunto Reserva de la Loma · Reporte confidencial para uso interno. No compartir sin autorizacion.',
+        'Conjunto Reserva de la Loma · Documento confidencial de uso interno.',
         34,
         footerY,
-        { align: 'center', width: 757 },
+        { align: 'center', width: 757, lineBreak: false },
       );
+  }
+
+  private drawCenteredCellText(
+    doc: PdfDocument,
+    text: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    options: {
+      font: string;
+      fontSize: number;
+      color: string;
+    },
+  ) {
+    doc.font(options.font).fontSize(options.fontSize).fillColor(options.color);
+    const textHeight = doc.heightOfString(text, {
+      width,
+      align: 'center',
+    });
+    const topOffset = Math.max(0, (height - textHeight) / 2);
+
+    doc.text(text, x, y + topOffset, {
+      width,
+      align: 'center',
+    });
   }
 }
