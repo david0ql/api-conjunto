@@ -47,14 +47,7 @@ export class AuthService {
     const payload: JwtPayload = { sub: resident.id, type: 'resident' };
     return {
       accessToken: this.jwtService.sign(payload),
-      user: {
-        id: resident.id,
-        name: resident.name,
-        lastName: resident.lastName,
-        email: resident.email,
-        type: 'resident',
-        residentType: resident.residentType?.code,
-      },
+      user: this.buildResidentSession(resident),
     };
   }
 
@@ -89,14 +82,129 @@ export class AuthService {
     };
     return {
       accessToken: this.jwtService.sign(payload),
-      user: {
-        id: employee.id,
-        name: employee.name,
-        lastName: employee.lastName,
-        username: employee.username,
-        type: 'employee',
-        role: employee.role?.code,
-      },
+      user: this.buildEmployeeSession(employee),
     };
+  }
+
+  async getSession(payload: JwtPayload) {
+    if (payload.type === 'resident') {
+      const resident = await this.residentsRepository.findOne({
+        where: { id: payload.sub },
+        relations: ['residentType'],
+        select: {
+          id: true,
+          name: true,
+          lastName: true,
+          email: true,
+          document: true,
+          phone: true,
+          isActive: true,
+          createdAt: true,
+          residentType: { id: true, code: true, name: true },
+        },
+      });
+
+      if (!resident || !resident.isActive) {
+        throw new UnauthorizedException('Session is no longer valid');
+      }
+
+      return this.buildResidentSession(resident);
+    }
+
+    const employee = await this.employeesRepository.findOne({
+      where: { id: payload.sub },
+      relations: ['role'],
+      select: {
+        id: true,
+        name: true,
+        lastName: true,
+        document: true,
+        username: true,
+        isActive: true,
+        createdAt: true,
+        role: { id: true, code: true, name: true },
+      },
+    });
+
+    if (!employee || !employee.isActive) {
+      throw new UnauthorizedException('Session is no longer valid');
+    }
+
+    return this.buildEmployeeSession(employee);
+  }
+
+  private buildResidentSession(resident: Partial<Resident> & { residentType?: Resident['residentType'] }) {
+    return {
+      id: resident.id,
+      name: resident.name,
+      lastName: resident.lastName,
+      email: resident.email,
+      document: resident.document,
+      phone: resident.phone,
+      createdAt: resident.createdAt,
+      type: 'resident' as const,
+      residentType: resident.residentType?.code,
+      residentTypeLabel: resident.residentType?.name,
+      permissions: [
+        'resident:dashboard',
+        'resident:profile',
+        'reservation:create',
+        'reservation:read:own',
+        'notification:read:own',
+        'package:read:own',
+      ],
+    };
+  }
+
+  private buildEmployeeSession(employee: Partial<Employee> & { role?: Employee['role'] }) {
+    const role = employee.role?.code;
+
+    return {
+      id: employee.id,
+      name: employee.name,
+      lastName: employee.lastName,
+      document: employee.document,
+      username: employee.username,
+      createdAt: employee.createdAt,
+      type: 'employee' as const,
+      role,
+      roleLabel: employee.role?.name,
+      permissions: this.getEmployeePermissions(role),
+    };
+  }
+
+  private getEmployeePermissions(role?: string) {
+    const common = ['employee:dashboard'];
+
+    switch (role) {
+      case 'administrator':
+        return [
+          ...common,
+          'admin:*',
+          'resident:manage',
+          'employee:manage',
+          'apartment:manage',
+          'reservation:manage',
+          'notification:manage',
+          'package:manage',
+          'access-audit:manage',
+          'pool-entry:manage',
+        ];
+      case 'porter':
+        return [
+          ...common,
+          'visitor:manage',
+          'access-audit:manage',
+          'package:manage',
+        ];
+      case 'pool_attendant':
+        return [
+          ...common,
+          'pool-entry:manage',
+          'resident:read',
+        ];
+      default:
+        return common;
+    }
   }
 }

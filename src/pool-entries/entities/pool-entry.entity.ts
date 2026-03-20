@@ -1,18 +1,21 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
-import { Resident } from '../../residents/entities/resident.entity';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { Employee } from '../../employees/entities/employee.entity';
+import { PoolEntryGuest } from './pool-entry-guest.entity';
+import { PoolEntryResident } from './pool-entry-resident.entity';
+import { Apartment } from '../../apartments/entities/apartment.entity';
+import { Resident } from '../../residents/entities/resident.entity';
 
 @Entity('pool_entries')
 export class PoolEntry {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Resident, { eager: false })
-  @JoinColumn({ name: 'resident_id' })
-  resident: Resident;
+  @ManyToOne(() => Apartment, { eager: false })
+  @JoinColumn({ name: 'apartment_id' })
+  apartment: Apartment;
 
-  @Column({ name: 'resident_id' })
-  residentId: string;
+  @Column({ name: 'apartment_id' })
+  apartmentId: string;
 
   @Column({ name: 'entry_time', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   entryTime: Date;
@@ -29,4 +32,18 @@ export class PoolEntry {
 
   @Column({ type: 'text', nullable: true })
   notes: string;
+
+  @OneToMany(() => PoolEntryGuest, (guest) => guest.poolEntry, {
+    cascade: true,
+    eager: true,
+  })
+  guests: PoolEntryGuest[];
+
+  @OneToMany(() => PoolEntryResident, (residentLink) => residentLink.poolEntry, {
+    cascade: true,
+    eager: true,
+  })
+  residentLinks: PoolEntryResident[];
+
+  residents?: Resident[];
 }

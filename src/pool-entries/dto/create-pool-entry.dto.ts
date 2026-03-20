@@ -1,14 +1,24 @@
-import { IsUUID, IsNotEmpty, IsOptional, IsInt, Min, IsString } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 export class CreatePoolEntryDto {
   @IsUUID()
   @IsNotEmpty()
-  residentId: string;
+  apartmentId: string;
 
-  @IsInt()
-  @Min(0)
-  @IsOptional()
-  guestCount?: number;
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  @ArrayMinSize(1)
+  @ArrayMaxSize(10)
+  residentIds: string[];
 
   @IsUUID()
   @IsOptional()
@@ -17,4 +27,11 @@ export class CreatePoolEntryDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  @ArrayMaxSize(10)
+  @IsOptional()
+  guestNames?: string[];
 }

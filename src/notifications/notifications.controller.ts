@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@n
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { EmployeeGuard } from '../common/guards/employee.guard';
+import { ResidentGuard } from '../common/guards/resident.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { NotificationsService } from './notifications.service';
@@ -20,13 +21,14 @@ export class NotificationsController {
   }
 
   @Get('my')
+  @UseGuards(ResidentGuard)
   findMy(@CurrentUser() user: JwtPayload) {
     return this.service.findByResident(user.sub);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    return this.service.findOneForUser(id, user);
   }
 
   @Post()
@@ -42,8 +44,8 @@ export class NotificationsController {
   }
 
   @Patch(':id/read')
-  markRead(@Param('id') id: string) {
-    return this.service.markRead(id);
+  markRead(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    return this.service.markRead(id, user);
   }
 
   @Delete(':id')

@@ -69,24 +69,75 @@ async function seed() {
   const [poolAtt] = await q(`SELECT id FROM employees WHERE username = 'pool1'`);
   console.log(`   ✓ admin (${admin.id}), porter1, pool1`);
 
+  // ─── Towers ──────────────────────────────────────────────────────
+  console.log('🗼 Creando torres...');
+  await q(`
+    INSERT INTO towers (id, code, name, total_floors, apartments_per_floor, is_active)
+    VALUES
+      (uuidv7(), 'A', 'Torre A', 10, 10, true),
+      (uuidv7(), 'B', 'Torre B', 10, 10, true),
+      (uuidv7(), 'C', 'Torre C', 10, 10, true),
+      (uuidv7(), 'D', 'Torre D', 10, 10, true),
+      (uuidv7(), 'E', 'Torre E', 10, 10, true),
+      (uuidv7(), 'F', 'Torre F', 10, 10, true),
+      (uuidv7(), 'G', 'Torre G', 10, 10, true),
+      (uuidv7(), 'H', 'Torre H', 10, 10, true),
+      (uuidv7(), 'I', 'Torre I', 10, 10, true)
+    ON CONFLICT (code) DO NOTHING
+  `);
+  console.log(`   ✓ 9 torres creadas`);
+
   // ─── Apartments ─────────────────────────────────────────────────
   console.log('🏢 Creando apartamentos...');
   await q(`
-    INSERT INTO apartments (id, number, tower, floor, area, status_id)
-    VALUES
-      (uuidv7(), '101', 'A', 1, 75.50, $1),
-      (uuidv7(), '102', 'A', 1, 80.00, $1),
-      (uuidv7(), '201', 'A', 2, 95.00, $1),
-      (uuidv7(), '202', 'A', 2, 95.00, $2),
-      (uuidv7(), '101', 'B', 1, 60.00, $1)
-    ON CONFLICT (tower, number) DO NOTHING
-  `, [occupiedStatus.id, vacantStatus.id]);
+    INSERT INTO apartments (id, tower_id, number, tower, floor, area, status_id)
+    SELECT
+      uuidv7(),
+      towers.id,
+      (floors.floor_number::text || LPAD(units.unit_number::text, 2, '0')) AS number,
+      towers.code,
+      floors.floor_number,
+      NULL,
+      $1
+    FROM towers
+    CROSS JOIN generate_series(1, 10) AS floors(floor_number)
+    CROSS JOIN generate_series(1, 10) AS units(unit_number)
+    ON CONFLICT (tower_id, number) DO NOTHING
+  `, [vacantStatus.id]);
+
+  await q(`
+    UPDATE apartments
+    SET status_id = $1,
+        area = CASE number
+          WHEN '101' THEN 75.50
+          WHEN '102' THEN 80.00
+          WHEN '201' THEN 95.00
+          ELSE area
+        END
+    WHERE tower = 'A'
+      AND number IN ('101', '102', '201')
+  `, [occupiedStatus.id]);
+
+  await q(`
+    UPDATE apartments
+    SET area = 95.00
+    WHERE tower = 'A'
+      AND number = '202'
+  `);
+
+  await q(`
+    UPDATE apartments
+    SET area = 60.00,
+        status_id = $1
+    WHERE tower = 'B'
+      AND number = '101'
+  `, [occupiedStatus.id]);
 
   const [apt101A] = await q(`SELECT id FROM apartments WHERE tower='A' AND number='101'`);
   const [apt102A] = await q(`SELECT id FROM apartments WHERE tower='A' AND number='102'`);
   const [apt201A] = await q(`SELECT id FROM apartments WHERE tower='A' AND number='201'`);
   const [apt101B] = await q(`SELECT id FROM apartments WHERE tower='B' AND number='101'`);
-  console.log(`   ✓ A-101, A-102, A-201, A-202, B-101`);
+  console.log(`   ✓ 900 apartamentos base + ajustes semilla`);
 
   // ─── Residents ──────────────────────────────────────────────────
   console.log('👤 Creando residentes...');
@@ -120,8 +171,8 @@ async function seed() {
       (uuidv7(), $1, $5, '2024-01-01'),
       (uuidv7(), $2, $6, '2024-03-01'),
       (uuidv7(), $3, $7, '2023-06-01'),
-      (uuidv7(), $4, $8, '2024-06-01'),
-      (uuidv7(), $4, $5, '2024-06-01')
+      (uuidv7(), $4, $5, '2024-06-01'),
+      (uuidv7(), $5, $8, '2024-07-01')
     ON CONFLICT DO NOTHING
   `, [ana.id, juan.id, sofia.id, miguel.id, apt101A.id, apt102A.id, apt201A.id, apt101B.id]);
   console.log(`   ✓ 5 vínculos creados`);
@@ -181,12 +232,66 @@ async function seed() {
   // ─── Pool Entries ───────────────────────────────────────────────
   console.log('🏊 Creando entradas a la piscina...');
   await q(`
-    INSERT INTO pool_entries (id, resident_id, entry_time, guest_count, created_by_employee_id, notes)
+    INSERT INTO pool_entries (id, apartment_id, entry_time, guest_count, created_by_employee_id, notes)
     VALUES
-      (uuidv7(), $1, NOW() - INTERVAL '4 hours', 2, $3, 'Entró con 2 familiares'),
-      (uuidv7(), $2, NOW() - INTERVAL '2 hours', 0, $3, 'Solo'),
-      (uuidv7(), $1, NOW() - INTERVAL '1 hour',  1, $3, 'Con un hijo')
-  `, [ana.id, sofia.id, poolAtt.id]);
+      (uuidv7(), $1, NOW() - INTERVAL '4 hours', 3, $3, 'Ingresaron dos residentes con tres invitados'),
+      (uuidv7(), $2, NOW() - INTERVAL '2 hours', 0, $3, 'Ingreso individual'),
+      (uuidv7(), $1, NOW() - INTERVAL '1 hour',  1, $3, 'Ingreso familiar corto')
+  `, [apt101A.id, apt201A.id, poolAtt.id]);
+  const poolEntries = await q(`
+    SELECT id, apartment_id, entry_time
+    FROM pool_entries
+    WHERE created_by_employee_id = $1
+    ORDER BY entry_time ASC
+    LIMIT 3
+  `, [poolAtt.id]);
+
+  const firstPoolEntry = poolEntries[0];
+  const thirdPoolEntry = poolEntries[2];
+
+  if (firstPoolEntry?.id) {
+    await q(`
+      INSERT INTO pool_entry_residents (id, pool_entry_id, resident_id)
+      VALUES
+        (uuidv7(), $1, $2),
+        (uuidv7(), $1, $3)
+      ON CONFLICT DO NOTHING
+    `, [firstPoolEntry.id, ana.id, miguel.id]);
+
+    await q(`
+      INSERT INTO pool_entry_guests (id, pool_entry_id, name)
+      VALUES
+        (uuidv7(), $1, 'Valentina Lopez'),
+        (uuidv7(), $1, 'Martin Lopez'),
+        (uuidv7(), $1, 'Laura Martinez')
+      ON CONFLICT DO NOTHING
+    `, [firstPoolEntry.id]);
+  }
+
+  if (poolEntries[1]?.id) {
+    await q(`
+      INSERT INTO pool_entry_residents (id, pool_entry_id, resident_id)
+      VALUES
+        (uuidv7(), $1, $2)
+      ON CONFLICT DO NOTHING
+    `, [poolEntries[1].id, sofia.id]);
+  }
+
+  if (thirdPoolEntry?.id) {
+    await q(`
+      INSERT INTO pool_entry_residents (id, pool_entry_id, resident_id)
+      VALUES
+        (uuidv7(), $1, $2)
+      ON CONFLICT DO NOTHING
+    `, [thirdPoolEntry.id, ana.id]);
+
+    await q(`
+      INSERT INTO pool_entry_guests (id, pool_entry_id, name)
+      VALUES
+        (uuidv7(), $1, 'Valentina Lopez')
+      ON CONFLICT DO NOTHING
+    `, [thirdPoolEntry.id]);
+  }
   console.log(`   ✓ 3 entradas a piscina`);
 
   // ─── Reservations ───────────────────────────────────────────────

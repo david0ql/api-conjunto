@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@n
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { EmployeeGuard } from '../common/guards/employee.guard';
+import { ResidentGuard } from '../common/guards/resident.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { ReservationsService } from './reservations.service';
@@ -20,23 +21,28 @@ export class ReservationsController {
   }
 
   @Get('my')
+  @UseGuards(ResidentGuard)
   findMy(@CurrentUser() user: JwtPayload) {
     return this.service.findByResident(user.sub);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    return this.service.findOneForUser(id, user);
   }
 
   @Post()
-  create(@Body() dto: CreateReservationDto) {
-    return this.service.create(dto);
+  create(@Body() dto: CreateReservationDto, @CurrentUser() user: JwtPayload) {
+    return this.service.createForUser(dto, user);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateReservationDto) {
-    return this.service.update(id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateReservationDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.updateForUser(id, dto, user);
   }
 
   @Patch(':id/status')

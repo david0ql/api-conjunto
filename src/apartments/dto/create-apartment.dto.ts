@@ -6,10 +6,9 @@ export class CreateApartmentDto {
   @MaxLength(10)
   number: string;
 
-  @IsString()
-  @IsOptional()
-  @MaxLength(10)
-  tower?: string;
+  @IsUUID()
+  @IsNotEmpty()
+  towerId: string;
 
   @IsNumber()
   @IsOptional()

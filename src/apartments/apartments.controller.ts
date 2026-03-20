@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { ApartmentsService } from './apartments.service';
@@ -11,8 +11,8 @@ export class ApartmentsController {
   constructor(private readonly service: ApartmentsService) {}
 
   @Get()
-  findAll() {
-    return this.service.findAll();
+  findAll(@Query('towerId') towerId?: string) {
+    return this.service.findAll(towerId);
   }
 
   @Get(':id')

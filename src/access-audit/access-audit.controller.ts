@@ -2,6 +2,8 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@n
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { EmployeeGuard } from '../common/guards/employee.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { AccessAuditService } from './access-audit.service';
 import { CreateAccessAuditDto } from './dto/create-access-audit.dto';
 import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
@@ -12,26 +14,27 @@ export class AccessAuditController {
   constructor(private readonly service: AccessAuditService) {}
 
   @Get()
-  @UseGuards(AdminGuard)
+  @UseGuards(EmployeeGuard)
   findAll() {
     return this.service.findAll();
   }
 
   @Get(':id')
-  @UseGuards(AdminGuard)
+  @UseGuards(EmployeeGuard)
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
   }
 
   @Post()
   @UseGuards(EmployeeGuard)
-  create(@Body() dto: CreateAccessAuditDto) {
-    return this.service.create(dto);
+  create(@Body() dto: CreateAccessAuditDto, @CurrentUser() user: JwtPayload) {
+    return this.service.create({ ...dto, authorizedByEmployeeId: user.sub });
   }
 
   @Patch(':id')
   @UseGuards(EmployeeGuard)
-  update(@Param('id') id: string, @Body() dto: UpdateAccessAuditDto) {
+  update(@Param('id') id: string, @Body() dto: UpdateAccessAuditDto, @CurrentUser() user: JwtPayload) {
+    void user;
     return this.service.update(id, dto);
   }
 

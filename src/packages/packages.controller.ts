@@ -2,6 +2,9 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@n
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { EmployeeGuard } from '../common/guards/employee.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
+import { ResidentGuard } from '../common/guards/resident.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PackagesService } from './packages.service';
 import { CreatePackageDto } from './dto/create-package.dto';
 import { UpdatePackageDto } from './dto/update-package.dto';
@@ -17,6 +20,12 @@ export class PackagesController {
     return this.service.findAll();
   }
 
+  @Get('my')
+  @UseGuards(ResidentGuard)
+  findMy(@CurrentUser() user: JwtPayload) {
+    return this.service.findByResident(user.sub);
+  }
+
   @Get(':id')
   @UseGuards(EmployeeGuard)
   findOne(@Param('id') id: string) {
@@ -25,8 +34,8 @@ export class PackagesController {
 
   @Post()
   @UseGuards(EmployeeGuard)
-  create(@Body() dto: CreatePackageDto) {
-    return this.service.create(dto);
+  create(@Body() dto: CreatePackageDto, @CurrentUser() user: JwtPayload) {
+    return this.service.create({ ...dto, createdByEmployeeId: user.sub });
   }
 
   @Patch(':id')

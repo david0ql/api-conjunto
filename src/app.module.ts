@@ -23,6 +23,7 @@ import { ReservationsModule } from './reservations/reservations.module';
 import { PackagesModule } from './packages/packages.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SystemLogsModule } from './system-logs/system-logs.module';
+import { TowersModule } from './towers/towers.module';
 
 import { ApartmentStatus } from './apartment-statuses/entities/apartment-status.entity';
 import { ResidentType } from './resident-types/entities/resident-type.entity';
@@ -38,11 +39,14 @@ import { Vehicle } from './vehicles/entities/vehicle.entity';
 import { ResidentApartment } from './resident-apartments/entities/resident-apartment.entity';
 import { AccessAudit } from './access-audit/entities/access-audit.entity';
 import { PoolEntry } from './pool-entries/entities/pool-entry.entity';
+import { PoolEntryGuest } from './pool-entries/entities/pool-entry-guest.entity';
+import { PoolEntryResident } from './pool-entries/entities/pool-entry-resident.entity';
 import { CommonArea } from './common-areas/entities/common-area.entity';
 import { Reservation } from './reservations/entities/reservation.entity';
 import { Package } from './packages/entities/package.entity';
 import { Notification } from './notifications/entities/notification.entity';
 import { SystemLog } from './system-logs/entities/system-log.entity';
+import { Tower } from './towers/entities/tower.entity';
 
 @Module({
   imports: [
@@ -59,9 +63,9 @@ import { SystemLog } from './system-logs/entities/system-log.entity';
         database: config.get('DATABASE_NAME', 'conjunto'),
         entities: [
           ApartmentStatus, ResidentType, VehicleType, EmployeeRole,
-          ReservationStatus, NotificationType, Apartment, Resident,
+          ReservationStatus, NotificationType, Tower, Apartment, Resident,
           Employee, Visitor, Vehicle, ResidentApartment, AccessAudit,
-          PoolEntry, CommonArea, Reservation, Package, Notification, SystemLog,
+          PoolEntry, PoolEntryGuest, PoolEntryResident, CommonArea, Reservation, Package, Notification, SystemLog,
         ],
         synchronize: false,
         namingStrategy: new SnakeCaseNamingStrategy(),
@@ -89,6 +93,7 @@ import { SystemLog } from './system-logs/entities/system-log.entity';
     PackagesModule,
     NotificationsModule,
     SystemLogsModule,
+    TowersModule,
   ],
 })
 export class AppModule {}

@@ -12,7 +12,7 @@ export class VisitorsController {
   constructor(private readonly service: VisitorsService) {}
 
   @Get()
-  @UseGuards(AdminGuard)
+  @UseGuards(EmployeeGuard)
   findAll() {
     return this.service.findAll();
   }
