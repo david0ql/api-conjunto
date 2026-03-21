@@ -41,12 +41,6 @@ export class PoolEntriesController {
     return this.service.findResidentsByApartment({ apartmentId, tower, number });
   }
 
-  @Get('guest-suggestions')
-  @UseGuards(PoolOperatorGuard)
-  guestSuggestions(@Query('query') query?: string) {
-    return this.service.getGuestSuggestions(query);
-  }
-
   @Get('reports/summary')
   @UseGuards(PoolOperatorGuard)
   summary(

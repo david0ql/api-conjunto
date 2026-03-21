@@ -133,23 +133,6 @@ export class PoolEntriesService {
     };
   }
 
-  async getGuestSuggestions(query?: string) {
-    const qb = this.guestsRepository
-      .createQueryBuilder('guest')
-      .select('guest.name', 'name')
-      .addSelect('COUNT(*)::int', 'uses')
-      .groupBy('guest.name')
-      .orderBy('uses', 'DESC')
-      .addOrderBy('guest.name', 'ASC')
-      .limit(12);
-
-    if (query?.trim()) {
-      qb.where('guest.name ILIKE :query', { query: `%${query.trim()}%` });
-    }
-
-    return qb.getRawMany<{ name: string; uses: number }>();
-  }
-
   async getSummary(filters: PoolReportFilters) {
     const entries = await this.findByDateRange(filters);
     const today = new Date().toISOString().slice(0, 10);
@@ -158,7 +141,6 @@ export class PoolEntriesService {
     const uniqueResidents = new Set(
       entries.flatMap((item) => item.residentLinks.map((link) => link.residentId)),
     ).size;
-    const topGuests = this.getTopGuests(entries);
 
     return {
       entriesToday: entriesToday.length,
@@ -166,7 +148,6 @@ export class PoolEntriesService {
       entriesInRange: entries.length,
       guestsInRange: entries.reduce((total, item) => total + item.guestCount, 0),
       uniqueResidents,
-      topGuests,
     };
   }
 
@@ -280,21 +261,6 @@ export class PoolEntriesService {
     }
 
     return normalizedResidentIds;
-  }
-
-  private getTopGuests(entries: PoolEntry[]) {
-    const counter = entries.reduce<Record<string, number>>((accumulator, entry) => {
-      for (const guest of entry.guests ?? []) {
-        accumulator[guest.name] = (accumulator[guest.name] ?? 0) + 1;
-      }
-
-      return accumulator;
-    }, {});
-
-    return Object.entries(counter)
-      .map(([name, uses]) => ({ name, uses }))
-      .sort((first, second) => second.uses - first.uses || first.name.localeCompare(second.name))
-      .slice(0, 8);
   }
 
   private getResidentNames(residents?: Resident[]) {
