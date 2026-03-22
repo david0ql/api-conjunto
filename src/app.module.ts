@@ -44,6 +44,7 @@ import { PoolEntryResident } from './pool-entries/entities/pool-entry-resident.e
 import { CommonArea } from './common-areas/entities/common-area.entity';
 import { Reservation } from './reservations/entities/reservation.entity';
 import { Package } from './packages/entities/package.entity';
+import { PackagePhoto } from './packages/entities/package-photo.entity';
 import { Notification } from './notifications/entities/notification.entity';
 import { SystemLog } from './system-logs/entities/system-log.entity';
 import { Tower } from './towers/entities/tower.entity';
@@ -65,7 +66,7 @@ import { Tower } from './towers/entities/tower.entity';
           ApartmentStatus, ResidentType, VehicleType, EmployeeRole,
           ReservationStatus, NotificationType, Tower, Apartment, Resident,
           Employee, Visitor, Vehicle, ResidentApartment, AccessAudit,
-          PoolEntry, PoolEntryGuest, PoolEntryResident, CommonArea, Reservation, Package, Notification, SystemLog,
+          PoolEntry, PoolEntryGuest, PoolEntryResident, CommonArea, Reservation, Package, PackagePhoto, Notification, SystemLog,
         ],
         synchronize: false,
         namingStrategy: new SnakeCaseNamingStrategy(),

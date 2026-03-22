@@ -1,7 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { Resident } from '../../residents/entities/resident.entity';
 import { Employee } from '../../employees/entities/employee.entity';
 import { Apartment } from '../../apartments/entities/apartment.entity';
+import { PackagePhoto } from './package-photo.entity';
 
 @Entity('packages')
 export class Package {
@@ -47,4 +48,10 @@ export class Package {
 
   @Column({ name: 'created_by_employee_id', nullable: true })
   createdByEmployeeId: string;
+
+  @OneToMany(() => PackagePhoto, (photo) => photo.package)
+  photos: PackagePhoto[];
+
+  // Virtual field populated by loadRelationCountAndMap
+  photoCount?: number;
 }
