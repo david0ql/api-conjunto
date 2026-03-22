@@ -13,13 +13,13 @@ export class PackagesService {
   ) {}
 
   async findAll(): Promise<Package[]> {
-    return this.repository.find({ relations: ['resident', 'createdByEmployee', 'receivedByResident'] });
+    return this.repository.find({ relations: ['apartment', 'apartment.towerData', 'resident', 'createdByEmployee', 'receivedByResident'] });
   }
 
   async findOne(id: string): Promise<Package> {
     const item = await this.repository.findOne({
       where: { id },
-      relations: ['resident', 'createdByEmployee', 'receivedByResident'],
+      relations: ['apartment', 'apartment.towerData', 'resident', 'createdByEmployee', 'receivedByResident'],
     });
     if (!item) throw new NotFoundException(`Package #${id} not found`);
     return item;
@@ -28,7 +28,7 @@ export class PackagesService {
   async findByResident(residentId: string): Promise<Package[]> {
     return this.repository.find({
       where: { residentId },
-      relations: ['createdByEmployee'],
+      relations: ['apartment', 'apartment.towerData', 'createdByEmployee'],
     });
   }
 

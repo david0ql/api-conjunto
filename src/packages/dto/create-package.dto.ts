@@ -3,7 +3,11 @@ import { IsUUID, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 export class CreatePackageDto {
   @IsUUID()
   @IsNotEmpty()
-  residentId: string;
+  apartmentId: string;
+
+  @IsUUID()
+  @IsOptional()
+  residentId?: string;
 
   @IsString()
   @IsOptional()

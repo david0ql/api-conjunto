@@ -1,17 +1,25 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { Resident } from '../../residents/entities/resident.entity';
 import { Employee } from '../../employees/entities/employee.entity';
+import { Apartment } from '../../apartments/entities/apartment.entity';
 
 @Entity('packages')
 export class Package {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Resident, { eager: false })
+  @ManyToOne(() => Apartment, { nullable: true, eager: false })
+  @JoinColumn({ name: 'apartment_id' })
+  apartment: Apartment;
+
+  @Column({ name: 'apartment_id', nullable: true })
+  apartmentId: string;
+
+  @ManyToOne(() => Resident, { nullable: true, eager: false })
   @JoinColumn({ name: 'resident_id' })
   resident: Resident;
 
-  @Column({ name: 'resident_id' })
+  @Column({ name: 'resident_id', nullable: true })
   residentId: string;
 
   @Column({ type: 'text', nullable: true })

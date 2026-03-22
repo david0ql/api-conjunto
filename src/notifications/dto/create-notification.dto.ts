@@ -1,9 +1,13 @@
-import { IsUUID, IsNotEmpty, IsString } from 'class-validator';
+import { IsUUID, IsNotEmpty, IsString, IsOptional } from 'class-validator';
 
 export class CreateNotificationDto {
   @IsUUID()
   @IsNotEmpty()
-  residentId: string;
+  apartmentId: string;
+
+  @IsUUID()
+  @IsOptional()
+  residentId?: string;
 
   @IsUUID()
   @IsNotEmpty()

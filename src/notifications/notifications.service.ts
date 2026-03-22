@@ -14,13 +14,13 @@ export class NotificationsService {
   ) {}
 
   async findAll(): Promise<Notification[]> {
-    return this.repository.find({ relations: ['resident', 'notificationType'] });
+    return this.repository.find({ relations: ['apartment', 'apartment.towerData', 'resident', 'notificationType'] });
   }
 
   async findOne(id: string): Promise<Notification> {
     const item = await this.repository.findOne({
       where: { id },
-      relations: ['resident', 'notificationType'],
+      relations: ['apartment', 'apartment.towerData', 'resident', 'notificationType'],
     });
     if (!item) throw new NotFoundException(`Notification #${id} not found`);
     return item;
@@ -39,7 +39,7 @@ export class NotificationsService {
   async findByResident(residentId: string): Promise<Notification[]> {
     return this.repository.find({
       where: { residentId },
-      relations: ['notificationType'],
+      relations: ['apartment', 'apartment.towerData', 'notificationType'],
       order: { createdAt: 'DESC' },
     });
   }
