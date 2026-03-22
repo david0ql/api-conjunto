@@ -9,8 +9,9 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { mkdirSync } from 'fs';
@@ -53,8 +54,33 @@ export class PackagesController {
 
   @Post()
   @UseGuards(EmployeeGuard)
-  create(@Body() dto: CreatePackageDto, @CurrentUser() user: JwtPayload) {
-    return this.service.create({ ...dto, createdByEmployeeId: user.sub });
+  @UseInterceptors(
+    FilesInterceptor('photos', 10, {
+      storage: diskStorage({
+        destination: UPLOAD_DIR,
+        filename: (_req, file, cb) => {
+          const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          cb(null, `${unique}${extname(file.originalname)}`);
+        },
+      }),
+      fileFilter: (_req, file, cb) => {
+        if (!file.mimetype.startsWith('image/')) {
+          return cb(new Error('Solo se permiten imágenes'), false);
+        }
+        cb(null, true);
+      },
+      limits: { fileSize: 15 * 1024 * 1024 },
+    }),
+  )
+  create(
+    @Body() dto: CreatePackageDto,
+    @CurrentUser() user: JwtPayload,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    return this.service.create(
+      { ...dto, createdByEmployeeId: user.sub },
+      (files ?? []).map((file) => `${UPLOAD_DIR}/${file.filename}`),
+    );
   }
 
   @Patch(':id')

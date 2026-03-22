@@ -38,15 +38,28 @@ export class PackagesService {
   }
 
   async findByResident(residentId: string): Promise<Package[]> {
-    return this.repository.find({
-      where: { residentId },
-      relations: ['apartment', 'apartment.towerData', 'createdByEmployee'],
-    });
+    return this.repository
+      .createQueryBuilder('pkg')
+      .leftJoinAndSelect('pkg.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData')
+      .leftJoinAndSelect('pkg.createdByEmployee', 'createdByEmployee')
+      .where('pkg.resident_id = :residentId', { residentId })
+      .loadRelationCountAndMap('pkg.photoCount', 'pkg.photos')
+      .orderBy('pkg.arrivalTime', 'DESC')
+      .getMany();
   }
 
-  async create(dto: CreatePackageDto): Promise<Package> {
+  async create(dto: CreatePackageDto, photoPaths: string[] = []): Promise<Package> {
     const item = this.repository.create(dto);
-    return this.repository.save(item);
+    const saved = await this.repository.save(item);
+
+    if (photoPaths.length > 0) {
+      await this.photoRepository.save(
+        photoPaths.map((filePath) => this.photoRepository.create({ packageId: saved.id, filePath })),
+      );
+    }
+
+    return this.findOne(saved.id);
   }
 
   async update(id: string, dto: UpdatePackageDto): Promise<Package> {
@@ -71,6 +84,7 @@ export class PackagesService {
   }
 
   async addPhoto(packageId: string, filePath: string): Promise<PackagePhoto> {
+    await this.findOne(packageId);
     const photo = this.photoRepository.create({ packageId, filePath });
     return this.photoRepository.save(photo);
   }
