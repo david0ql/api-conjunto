@@ -51,8 +51,14 @@ export class EmployeesService {
   }
 
   async deactivate(id: string): Promise<Employee> {
-    const item = await this.findOne(id);
-    item.isActive = false;
-    return this.repository.save(item);
+    await this.findOne(id);
+    await this.repository.update(id, { isActive: false } as any);
+    return this.findOne(id);
+  }
+
+  async activate(id: string): Promise<Employee> {
+    await this.findOne(id);
+    await this.repository.update(id, { isActive: true } as any);
+    return this.findOne(id);
   }
 }

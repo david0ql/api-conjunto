@@ -13,12 +13,15 @@ export class ResidentsService {
     private repository: Repository<Resident>,
   ) {}
 
-  async findAll(): Promise<Resident[]> {
-    return this.repository.find({ relations: ['residentType'] });
+  async findAll(apartmentId?: string): Promise<Resident[]> {
+    return this.repository.find({
+      where: apartmentId ? ({ apartmentId } as any) : undefined,
+      relations: ['residentType', 'apartment', 'apartment.towerData'],
+    });
   }
 
   async findOne(id: string): Promise<Resident> {
-    const item = await this.repository.findOne({ where: { id }, relations: ['residentType'] });
+    const item = await this.repository.findOne({ where: { id }, relations: ['residentType', 'apartment', 'apartment.towerData'] });
     if (!item) throw new NotFoundException(`Resident #${id} not found`);
     return item;
   }
@@ -51,8 +54,33 @@ export class ResidentsService {
   }
 
   async deactivate(id: string): Promise<Resident> {
-    const item = await this.findOne(id);
-    item.isActive = false;
-    return this.repository.save(item);
+    await this.findOne(id);
+    await this.repository.update(id, { isActive: false } as any);
+    return this.findOne(id);
+  }
+
+  async activate(id: string): Promise<Resident> {
+    await this.findOne(id);
+    await this.repository.update(id, { isActive: true } as any);
+    return this.findOne(id);
+  }
+
+  async assignApartment(id: string, apartmentId: string): Promise<Resident> {
+    await this.findOne(id);
+    await this.repository.update(id, { apartmentId } as any);
+    return this.findOne(id);
+  }
+
+  async unassignApartment(id: string): Promise<Resident> {
+    await this.findOne(id);
+    await this.repository.update(id, { apartmentId: null } as any);
+    return this.findOne(id);
+  }
+
+  async findByApartment(apartmentId: string): Promise<Resident[]> {
+    return this.repository.find({
+      where: { apartmentId } as any,
+      relations: ['residentType', 'apartment', 'apartment.towerData'],
+    });
   }
 }

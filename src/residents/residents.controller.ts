@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { EmployeeGuard } from '../common/guards/employee.guard';
@@ -15,8 +15,8 @@ export class ResidentsController {
 
   @Get()
   @UseGuards(EmployeeGuard)
-  findAll() {
-    return this.service.findAll();
+  findAll(@Query('apartmentId') apartmentId?: string) {
+    return this.service.findAll(apartmentId);
   }
 
   @Get('me')
@@ -46,6 +46,24 @@ export class ResidentsController {
   @UseGuards(AdminGuard)
   deactivate(@Param('id') id: string) {
     return this.service.deactivate(id);
+  }
+
+  @Patch(':id/activate')
+  @UseGuards(AdminGuard)
+  activate(@Param('id') id: string) {
+    return this.service.activate(id);
+  }
+
+  @Patch(':id/assign-apartment')
+  @UseGuards(AdminGuard)
+  assignApartment(@Param('id') id: string, @Body() body: { apartmentId: string }) {
+    return this.service.assignApartment(id, body.apartmentId);
+  }
+
+  @Patch(':id/unassign-apartment')
+  @UseGuards(AdminGuard)
+  unassignApartment(@Param('id') id: string) {
+    return this.service.unassignApartment(id);
   }
 
   @Delete(':id')

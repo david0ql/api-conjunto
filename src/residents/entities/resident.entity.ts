@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
 import { ResidentType } from '../../resident-types/entities/resident-type.entity';
+import { Apartment } from '../../apartments/entities/apartment.entity';
 
 @Entity('residents')
 export class Resident {
@@ -33,6 +34,13 @@ export class Resident {
 
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
+
+  @ManyToOne(() => Apartment, { nullable: true, eager: false })
+  @JoinColumn({ name: 'apartment_id' })
+  apartment: Apartment;
+
+  @Column({ name: 'apartment_id', nullable: true })
+  apartmentId: string;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

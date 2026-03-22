@@ -35,6 +35,11 @@ export class EmployeesController {
     return this.service.deactivate(id);
   }
 
+  @Patch(':id/activate')
+  activate(@Param('id') id: string) {
+    return this.service.activate(id);
+  }
+
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.service.remove(id);
