@@ -15,30 +15,39 @@ export class ApartmentsService {
     private towersRepository: Repository<Tower>,
   ) {}
 
+  private async attachResidentCounts(apartments: Apartment[]): Promise<Apartment[]> {
+    if (apartments.length === 0) return apartments;
+    const rows: { apartment_id: string; count: string }[] = await this.repository.query(
+      `SELECT apartment_id, COUNT(*) AS count FROM residents WHERE apartment_id IS NOT NULL GROUP BY apartment_id`,
+    );
+    const countMap = new Map(rows.map((r) => [r.apartment_id, parseInt(r.count, 10)]));
+    return apartments.map((apt) => ({ ...apt, residentCount: countMap.get(apt.id) ?? 0 }));
+  }
+
   async findAll(towerId?: string): Promise<Apartment[]> {
-    return this.repository.find({
+    const apartments = await this.repository.find({
       where: towerId ? { towerId } : undefined,
-      relations: ['status', 'towerData'],
+      relations: ['towerData'],
       order: { tower: 'ASC', number: 'ASC' },
     });
+    return this.attachResidentCounts(apartments);
   }
 
   async findOne(id: string): Promise<Apartment> {
-    const item = await this.repository.findOne({ where: { id }, relations: ['status', 'towerData'] });
+    const item = await this.repository.findOne({ where: { id }, relations: ['towerData'] });
     if (!item) throw new NotFoundException(`Apartment #${id} not found`);
-    return item;
+    const [withCount] = await this.attachResidentCounts([item]);
+    return withCount;
   }
 
   async create(dto: CreateApartmentDto): Promise<Apartment> {
     const tower = await this.towersRepository.findOne({ where: { id: dto.towerId } });
     if (!tower) throw new NotFoundException(`Tower #${dto.towerId} not found`);
 
-    const item = this.repository.create({
-      ...dto,
-      tower: tower.code,
-    });
+    const item = this.repository.create({ ...dto, tower: tower.code });
     try {
-      return await this.repository.save(item);
+      const saved = await this.repository.save(item);
+      return this.findOne(saved.id);
     } catch (err: any) {
       if (err?.code === '23505') throw new ConflictException('Apartment with this tower and number already exists');
       throw err;
@@ -53,9 +62,9 @@ export class ApartmentsService {
       item.towerId = tower.id;
       item.tower = tower.code;
     }
-
     Object.assign(item, { ...dto, tower: item.tower });
-    return this.repository.save(item);
+    await this.repository.save(item);
+    return this.findOne(id);
   }
 
   async remove(id: string): Promise<void> {

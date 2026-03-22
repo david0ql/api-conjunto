@@ -1,10 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Tower } from './entities/tower.entity';
 import { CreateTowerDto } from './dto/create-tower.dto';
 import { Apartment } from '../apartments/entities/apartment.entity';
-import { ApartmentStatus } from '../apartment-statuses/entities/apartment-status.entity';
 
 @Injectable()
 export class TowersService {
@@ -13,8 +12,6 @@ export class TowersService {
     private towersRepository: Repository<Tower>,
     @InjectRepository(Apartment)
     private apartmentsRepository: Repository<Apartment>,
-    @InjectRepository(ApartmentStatus)
-    private apartmentStatusesRepository: Repository<ApartmentStatus>,
   ) {}
 
   async findAll() {
@@ -34,35 +31,17 @@ export class TowersService {
 
     try {
       const savedTower = await this.towersRepository.save(tower);
-      const apartmentStatusId = await this.resolveApartmentStatusId(dto.apartmentStatusId);
-      await this.generateApartments(savedTower, apartmentStatusId);
+      await this.generateApartments(savedTower);
       return this.towersRepository.findOneByOrFail({ id: savedTower.id });
     } catch (error: any) {
       if (error?.code === '23505') {
         throw new ConflictException('A tower with this code already exists');
       }
-
       throw error;
     }
   }
 
-  private async resolveApartmentStatusId(apartmentStatusId?: string) {
-    if (apartmentStatusId) {
-      return apartmentStatusId;
-    }
-
-    const vacantStatus = await this.apartmentStatusesRepository.findOne({
-      where: { code: 'vacant' },
-    });
-
-    if (!vacantStatus) {
-      throw new NotFoundException('Vacant apartment status not found');
-    }
-
-    return vacantStatus.id;
-  }
-
-  private async generateApartments(tower: Tower, statusId: string) {
+  private async generateApartments(tower: Tower) {
     const apartments: Apartment[] = [];
 
     for (let floor = 1; floor <= tower.totalFloors; floor += 1) {
@@ -73,7 +52,6 @@ export class TowersService {
           this.apartmentsRepository.create({
             number,
             floor,
-            statusId,
             tower: tower.code,
             towerId: tower.id,
           }),

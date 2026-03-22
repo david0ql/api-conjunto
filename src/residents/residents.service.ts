@@ -14,14 +14,25 @@ export class ResidentsService {
   ) {}
 
   async findAll(apartmentId?: string): Promise<Resident[]> {
-    return this.repository.find({
-      where: apartmentId ? ({ apartmentId } as any) : undefined,
-      relations: ['residentType', 'apartment', 'apartment.towerData'],
-    });
+    const qb = this.repository
+      .createQueryBuilder('r')
+      .leftJoinAndSelect('r.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData');
+
+    if (apartmentId) {
+      qb.where('r.apartment_id = :apartmentId', { apartmentId });
+    }
+
+    return qb.getMany();
   }
 
   async findOne(id: string): Promise<Resident> {
-    const item = await this.repository.findOne({ where: { id }, relations: ['residentType', 'apartment', 'apartment.towerData'] });
+    const item = await this.repository
+      .createQueryBuilder('r')
+      .leftJoinAndSelect('r.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData')
+      .where('r.id = :id', { id })
+      .getOne();
     if (!item) throw new NotFoundException(`Resident #${id} not found`);
     return item;
   }
@@ -67,20 +78,19 @@ export class ResidentsService {
 
   async assignApartment(id: string, apartmentId: string): Promise<Resident> {
     await this.findOne(id);
-    await this.repository.update(id, { apartmentId } as any);
+    await this.repository.query(
+      'UPDATE residents SET apartment_id = $1 WHERE id = $2',
+      [apartmentId, id],
+    );
     return this.findOne(id);
   }
 
   async unassignApartment(id: string): Promise<Resident> {
     await this.findOne(id);
-    await this.repository.update(id, { apartmentId: null } as any);
+    await this.repository.query(
+      'UPDATE residents SET apartment_id = NULL WHERE id = $1',
+      [id],
+    );
     return this.findOne(id);
-  }
-
-  async findByApartment(apartmentId: string): Promise<Resident[]> {
-    return this.repository.find({
-      where: { apartmentId } as any,
-      relations: ['residentType', 'apartment', 'apartment.towerData'],
-    });
   }
 }

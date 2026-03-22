@@ -17,8 +17,4 @@ export class CreateApartmentDto {
   @IsNumber()
   @IsOptional()
   area?: number;
-
-  @IsUUID()
-  @IsNotEmpty()
-  statusId: string;
 }

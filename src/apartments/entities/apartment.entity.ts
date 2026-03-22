@@ -1,5 +1,4 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, Unique } from 'typeorm';
-import { ApartmentStatus } from '../../apartment-statuses/entities/apartment-status.entity';
 import { Tower } from '../../towers/entities/tower.entity';
 
 @Entity('apartments')
@@ -27,13 +26,9 @@ export class Apartment {
   @Column({ type: 'numeric', precision: 10, scale: 2, nullable: true })
   area: number;
 
-  @ManyToOne(() => ApartmentStatus, { eager: true })
-  @JoinColumn({ name: 'status_id' })
-  status: ApartmentStatus;
-
-  @Column({ name: 'status_id' })
-  statusId: string;
-
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
+
+  // Virtual field populated by service — not a DB column
+  residentCount?: number;
 }
