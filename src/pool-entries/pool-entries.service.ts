@@ -7,7 +7,6 @@ import { PoolEntryGuest } from './entities/pool-entry-guest.entity';
 import { PoolEntryResident } from './entities/pool-entry-resident.entity';
 import { CreatePoolEntryDto } from './dto/create-pool-entry.dto';
 import { UpdatePoolEntryDto } from './dto/update-pool-entry.dto';
-import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
 import { Apartment } from '../apartments/entities/apartment.entity';
 import { Resident } from '../residents/entities/resident.entity';
 
@@ -28,10 +27,10 @@ export class PoolEntriesService {
     private guestsRepository: Repository<PoolEntryGuest>,
     @InjectRepository(PoolEntryResident)
     private residentLinksRepository: Repository<PoolEntryResident>,
-    @InjectRepository(ResidentApartment)
-    private residentApartmentsRepository: Repository<ResidentApartment>,
     @InjectRepository(Apartment)
     private apartmentsRepository: Repository<Apartment>,
+    @InjectRepository(Resident)
+    private residentsRepository: Repository<Resident>,
   ) {}
 
   async findAll(): Promise<PoolEntry[]> {
@@ -110,26 +109,25 @@ export class PoolEntriesService {
     const apartment = filters.apartmentId
       ? await this.apartmentsRepository.findOne({
           where: { id: filters.apartmentId },
-          relations: ['status', 'towerData'],
+          relations: ['towerData'],
         })
       : await this.apartmentsRepository.findOne({
           where: { tower: filters.tower, number: filters.number },
-          relations: ['status', 'towerData'],
+          relations: ['towerData'],
         });
 
     if (!apartment) {
       throw new NotFoundException('Apartment not found');
     }
 
-    const residents = await this.residentApartmentsRepository.find({
+    const residents = await this.residentsRepository.find({
       where: { apartmentId: apartment.id },
-      relations: ['resident'],
       order: { createdAt: 'DESC' },
     });
 
     return {
       apartment,
-      residents: residents.map((item) => item.resident),
+      residents,
     };
   }
 
@@ -247,14 +245,14 @@ export class PoolEntriesService {
       throw new NotFoundException(`Apartment #${apartmentId} not found`);
     }
 
-    const links = await this.residentApartmentsRepository.find({
+    const residents = await this.residentsRepository.find({
       where: {
         apartmentId,
-        residentId: In(normalizedResidentIds),
+        id: In(normalizedResidentIds),
       },
     });
 
-    if (links.length !== normalizedResidentIds.length) {
+    if (residents.length !== normalizedResidentIds.length) {
       throw new BadRequestException(
         'Todos los residentes seleccionados deben pertenecer al apartamento indicado',
       );

@@ -5,11 +5,11 @@ import { PoolEntriesController } from './pool-entries.controller';
 import { PoolEntry } from './entities/pool-entry.entity';
 import { PoolEntryGuest } from './entities/pool-entry-guest.entity';
 import { PoolEntryResident } from './entities/pool-entry-resident.entity';
-import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
 import { Apartment } from '../apartments/entities/apartment.entity';
+import { Resident } from '../residents/entities/resident.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([PoolEntry, PoolEntryGuest, PoolEntryResident, ResidentApartment, Apartment])],
+  imports: [TypeOrmModule.forFeature([PoolEntry, PoolEntryGuest, PoolEntryResident, Apartment, Resident])],
   controllers: [PoolEntriesController],
   providers: [PoolEntriesService],
   exports: [PoolEntriesService],
