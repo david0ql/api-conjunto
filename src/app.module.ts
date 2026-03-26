@@ -27,6 +27,7 @@ import { TowersModule } from './towers/towers.module';
 import { NewsCategoriesModule } from './news-categories/news-categories.module';
 import { NewsModule } from './news/news.module';
 import { CommunitySpacesModule } from './community-spaces/community-spaces.module';
+import { CallsModule } from './calls/calls.module';
 
 import { ApartmentStatus } from './apartment-statuses/entities/apartment-status.entity';
 import { ResidentType } from './resident-types/entities/resident-type.entity';
@@ -54,6 +55,7 @@ import { Tower } from './towers/entities/tower.entity';
 import { NewsCategory } from './news-categories/entities/news-category.entity';
 import { News } from './news/entities/news.entity';
 import { CommunitySpace } from './community-spaces/entities/community-space.entity';
+import { CallSession } from './calls/entities/call-session.entity';
 
 @Module({
   imports: [
@@ -73,7 +75,7 @@ import { CommunitySpace } from './community-spaces/entities/community-space.enti
           ReservationStatus, NotificationType, Tower, Apartment, Resident,
           Employee, Visitor, Vehicle, ResidentApartment, AccessAudit,
           PoolEntry, PoolEntryGuest, PoolEntryResident, CommonArea, Reservation, Package, PackagePhoto, Notification, SystemLog,
-          NewsCategory, News, CommunitySpace,
+          NewsCategory, News, CommunitySpace, CallSession,
         ],
         synchronize: true,
         namingStrategy: new SnakeCaseNamingStrategy(),
@@ -105,6 +107,7 @@ import { CommunitySpace } from './community-spaces/entities/community-space.enti
     NewsCategoriesModule,
     NewsModule,
     CommunitySpacesModule,
+    CallsModule,
   ],
 })
 export class AppModule {}

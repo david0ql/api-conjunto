@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { EmployeeGuard } from '../common/guards/employee.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
@@ -27,10 +27,10 @@ export class AccessAuditController {
 
   @Get('my')
   @UseGuards(ResidentGuard)
-  async findMy(@CurrentUser() user: JwtPayload) {
-    const resident = await this.residentsService.findOne(user.sub);
-    if (!resident.apartmentId) return [];
-    return this.service.findByApartment(resident.apartmentId);
+  async findMy(@CurrentUser() user: JwtPayload, @Query('apartmentId') apartmentId?: string) {
+    const aptId = apartmentId?.trim() || (await this.residentsService.findOne(user.sub)).apartmentId;
+    if (!aptId) return [];
+    return this.service.findByApartment(aptId);
   }
 
   @Get(':id')
