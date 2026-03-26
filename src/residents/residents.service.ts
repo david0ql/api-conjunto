@@ -20,6 +20,7 @@ export class ResidentsService {
   async findAll(apartmentId?: string): Promise<Resident[]> {
     const qb = this.repository
       .createQueryBuilder('r')
+      .leftJoinAndSelect('r.residentType', 'residentType')
       .leftJoinAndSelect('r.apartment', 'apartment')
       .leftJoinAndSelect('apartment.towerData', 'towerData');
 
@@ -33,6 +34,7 @@ export class ResidentsService {
   async findOne(id: string): Promise<Resident> {
     const item = await this.repository
       .createQueryBuilder('r')
+      .leftJoinAndSelect('r.residentType', 'residentType')
       .leftJoinAndSelect('r.apartment', 'apartment')
       .leftJoinAndSelect('apartment.towerData', 'towerData')
       .where('r.id = :id', { id })
