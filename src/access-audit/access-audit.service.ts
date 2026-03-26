@@ -15,6 +15,7 @@ export class AccessAuditService {
   async findAll(): Promise<AccessAudit[]> {
     return this.repository.find({
       relations: ['resident', 'visitor', 'vehicle', 'apartment', 'authorizedByEmployee'],
+      order: { entryTime: 'DESC' },
     });
   }
 

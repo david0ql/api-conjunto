@@ -13,7 +13,7 @@ export class CommonAreasService {
   ) {}
 
   async findAll(): Promise<CommonArea[]> {
-    return this.repository.find();
+    return this.repository.find({ order: { createdAt: 'DESC' } });
   }
 
   async findOne(id: string): Promise<CommonArea> {

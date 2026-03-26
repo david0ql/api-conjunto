@@ -28,7 +28,7 @@ export class ResidentsService {
       qb.where('r.apartment_id = :apartmentId', { apartmentId });
     }
 
-    return qb.getMany();
+    return qb.orderBy('r.createdAt', 'DESC').getMany();
   }
 
   async findOne(id: string): Promise<Resident> {
