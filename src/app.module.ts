@@ -24,6 +24,8 @@ import { PackagesModule } from './packages/packages.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SystemLogsModule } from './system-logs/system-logs.module';
 import { TowersModule } from './towers/towers.module';
+import { NewsCategoriesModule } from './news-categories/news-categories.module';
+import { NewsModule } from './news/news.module';
 
 import { ApartmentStatus } from './apartment-statuses/entities/apartment-status.entity';
 import { ResidentType } from './resident-types/entities/resident-type.entity';
@@ -48,6 +50,8 @@ import { PackagePhoto } from './packages/entities/package-photo.entity';
 import { Notification } from './notifications/entities/notification.entity';
 import { SystemLog } from './system-logs/entities/system-log.entity';
 import { Tower } from './towers/entities/tower.entity';
+import { NewsCategory } from './news-categories/entities/news-category.entity';
+import { News } from './news/entities/news.entity';
 
 @Module({
   imports: [
@@ -56,19 +60,20 @@ import { Tower } from './towers/entities/tower.entity';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        type: 'postgres',
-        host: config.get('DATABASE_HOST', 'localhost'),
+        type: 'postgres' as const,
+        host: config.get<string>('DATABASE_HOST', 'localhost'),
         port: config.get<number>('DATABASE_PORT', 5432),
-        username: config.get('DATABASE_USER', 'conjunto'),
-        password: config.get('DATABASE_PASSWORD', 'conjunto'),
-        database: config.get('DATABASE_NAME', 'conjunto'),
+        username: config.get<string>('DATABASE_USER', 'conjunto'),
+        password: config.get<string>('DATABASE_PASSWORD', 'conjunto'),
+        database: config.get<string>('DATABASE_NAME', 'conjunto'),
         entities: [
           ApartmentStatus, ResidentType, VehicleType, EmployeeRole,
           ReservationStatus, NotificationType, Tower, Apartment, Resident,
           Employee, Visitor, Vehicle, ResidentApartment, AccessAudit,
           PoolEntry, PoolEntryGuest, PoolEntryResident, CommonArea, Reservation, Package, PackagePhoto, Notification, SystemLog,
+          NewsCategory, News,
         ],
-        synchronize: false,
+        synchronize: true,
         namingStrategy: new SnakeCaseNamingStrategy(),
         logging: config.get('NODE_ENV') !== 'production',
       }),
@@ -95,6 +100,8 @@ import { Tower } from './towers/entities/tower.entity';
     NotificationsModule,
     SystemLogsModule,
     TowersModule,
+    NewsCategoriesModule,
+    NewsModule,
   ],
 })
 export class AppModule {}
