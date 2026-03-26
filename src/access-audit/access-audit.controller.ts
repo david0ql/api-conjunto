@@ -7,6 +7,7 @@ import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { AccessAuditService } from './access-audit.service';
 import { CreateAccessAuditDto } from './dto/create-access-audit.dto';
 import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
+import { EmployeeOrResidentGuard } from '../common/guards/employee-or-resident.guard';
 
 @UseGuards(JwtAuthGuard)
 @Controller('access-audit')
@@ -14,7 +15,7 @@ export class AccessAuditController {
   constructor(private readonly service: AccessAuditService) {}
 
   @Get()
-  @UseGuards(EmployeeGuard)
+  @UseGuards(EmployeeOrResidentGuard)
   findAll() {
     return this.service.findAll();
   }
