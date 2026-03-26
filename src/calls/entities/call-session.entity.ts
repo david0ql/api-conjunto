@@ -35,7 +35,7 @@ export class CallSession {
   @JoinColumn({ name: 'accepted_by_resident_id' })
   acceptedByResident: Resident | null;
 
-  @Column({ name: 'accepted_by_resident_id', nullable: true })
+  @Column({ name: 'accepted_by_resident_id', type: 'uuid', nullable: true })
   acceptedByResidentId: string | null;
 
   @Column({ length: 20, default: 'ringing' })
@@ -47,13 +47,13 @@ export class CallSession {
   @Column({ name: 'rejected_resident_ids', type: 'simple-json', nullable: true })
   rejectedResidentIds: string[] | null;
 
-  @Column({ name: 'ended_by_user_id', nullable: true })
+  @Column({ name: 'ended_by_user_id', type: 'uuid', nullable: true })
   endedByUserId: string | null;
 
-  @Column({ name: 'ended_by_user_type', length: 20, nullable: true })
+  @Column({ name: 'ended_by_user_type', type: 'varchar', length: 20, nullable: true })
   endedByUserType: 'employee' | 'resident' | null;
 
-  @Column({ name: 'ended_reason', length: 40, nullable: true })
+  @Column({ name: 'ended_reason', type: 'varchar', length: 40, nullable: true })
   endedReason: string | null;
 
   @Column({ name: 'accepted_at', type: 'timestamptz', nullable: true })
