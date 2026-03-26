@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { EmployeeGuard } from '../common/guards/employee.guard';
@@ -30,8 +30,9 @@ export class ResidentsController {
   }
 
   @Get('me/qr')
-  getMyQr(@CurrentUser() user: JwtPayload) {
-    return this.service.getQrCode(user.sub);
+  getMyQr(@CurrentUser() user: JwtPayload, @Query('apartmentId') apartmentId?: string) {
+    if (!apartmentId) throw new BadRequestException('apartmentId is required');
+    return this.service.getQrCode(user.sub, apartmentId);
   }
 
   @Get(':id')

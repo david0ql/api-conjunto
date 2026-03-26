@@ -58,15 +58,15 @@ export class ResidentsService {
     return count > 0;
   }
 
-  async getQrCode(residentId: string): Promise<{ dataUrl: string; residentId: string }> {
+  async getQrCode(residentId: string, apartmentId: string): Promise<{ dataUrl: string; residentId: string; apartmentId: string }> {
     const resident = await this.findOne(residentId);
-    const payload = JSON.stringify({ residentId: resident.id, type: 'resident-access' });
+    const payload = JSON.stringify({ residentId: resident.id, apartmentId, type: 'resident-access' });
     const dataUrl = await QRCode.toDataURL(payload, {
       width: 400,
       margin: 2,
       color: { dark: '#000000', light: '#ffffff' },
     });
-    return { dataUrl, residentId: resident.id };
+    return { dataUrl, residentId: resident.id, apartmentId };
   }
 
   async create(dto: CreateResidentDto): Promise<Resident> {
