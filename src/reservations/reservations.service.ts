@@ -43,6 +43,7 @@ export class ReservationsService {
     return this.repository.find({
       where: { residentId },
       relations: ['area', 'status'],
+      order: { createdAt: 'DESC' },
     });
   }
 
