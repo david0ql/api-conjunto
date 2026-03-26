@@ -168,13 +168,13 @@ async function seed() {
   await q(`
     INSERT INTO resident_apartments (id, resident_id, apartment_id, start_date)
     VALUES
-      (uuidv7(), $1, $5, '2024-01-01'),
-      (uuidv7(), $2, $6, '2024-03-01'),
-      (uuidv7(), $3, $7, '2023-06-01'),
-      (uuidv7(), $4, $5, '2024-06-01'),
-      (uuidv7(), $5, $8, '2024-07-01')
+      (uuidv7(), $1, $6, '2024-01-01'),
+      (uuidv7(), $2, $7, '2024-03-01'),
+      (uuidv7(), $3, $8, '2023-06-01'),
+      (uuidv7(), $4, $6, '2024-06-01'),
+      (uuidv7(), $5, $9, '2024-07-01')
     ON CONFLICT DO NOTHING
-  `, [ana.id, juan.id, sofia.id, miguel.id, apt101A.id, apt102A.id, apt201A.id, apt101B.id]);
+  `, [ana.id, juan.id, sofia.id, miguel.id, daniela.id, apt101A.id, apt102A.id, apt201A.id, apt101B.id]);
   console.log(`   ✓ 5 vínculos creados`);
 
   // ─── Vehicles ───────────────────────────────────────────────────
