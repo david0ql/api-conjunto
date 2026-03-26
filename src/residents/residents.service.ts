@@ -2,15 +2,19 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import * as QRCode from 'qrcode';
 import { Resident } from './entities/resident.entity';
 import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
+import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
 
 @Injectable()
 export class ResidentsService {
   constructor(
     @InjectRepository(Resident)
     private repository: Repository<Resident>,
+    @InjectRepository(ResidentApartment)
+    private residentApartmentsRepository: Repository<ResidentApartment>,
   ) {}
 
   async findAll(apartmentId?: string): Promise<Resident[]> {
@@ -35,6 +39,32 @@ export class ResidentsService {
       .getOne();
     if (!item) throw new NotFoundException(`Resident #${id} not found`);
     return item;
+  }
+
+  async getMyApartments(residentId: string): Promise<ResidentApartment[]> {
+    return this.residentApartmentsRepository.find({
+      where: { residentId },
+      relations: ['apartment', 'apartment.towerData'],
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  async hasApartment(residentId: string): Promise<boolean> {
+    const resident = await this.repository.findOne({ where: { id: residentId } });
+    if (resident?.apartmentId) return true;
+    const count = await this.residentApartmentsRepository.count({ where: { residentId } });
+    return count > 0;
+  }
+
+  async getQrCode(residentId: string): Promise<{ dataUrl: string; residentId: string }> {
+    const resident = await this.findOne(residentId);
+    const payload = JSON.stringify({ residentId: resident.id, type: 'resident-access' });
+    const dataUrl = await QRCode.toDataURL(payload, {
+      width: 400,
+      margin: 2,
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+    return { dataUrl, residentId: resident.id };
   }
 
   async create(dto: CreateResidentDto): Promise<Resident> {
@@ -82,6 +112,15 @@ export class ResidentsService {
       'UPDATE residents SET apartment_id = $1 WHERE id = $2',
       [apartmentId, id],
     );
+    // Also ensure entry in resident_apartments junction table
+    const existing = await this.residentApartmentsRepository.findOne({
+      where: { residentId: id, apartmentId },
+    });
+    if (!existing) {
+      await this.residentApartmentsRepository.save(
+        this.residentApartmentsRepository.create({ residentId: id, apartmentId }),
+      );
+    }
     return this.findOne(id);
   }
 

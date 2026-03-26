@@ -44,6 +44,14 @@ export class AccessAuditService {
     return this.repository.save(item);
   }
 
+  async findByApartment(apartmentId: string): Promise<AccessAudit[]> {
+    return this.repository.find({
+      where: { apartmentId },
+      relations: ['resident', 'visitor', 'vehicle', 'apartment', 'authorizedByEmployee'],
+      order: { entryTime: 'DESC' },
+    });
+  }
+
   async remove(id: string): Promise<void> {
     const item = await this.findOne(id);
     await this.repository.remove(item);

@@ -42,6 +42,12 @@ export class NewsService {
     return this.findOne(id);
   }
 
+  async updateImageUrl(id: string, imageUrl: string): Promise<News> {
+    await this.findOne(id);
+    await this.repository.update(id, { imageUrl });
+    return this.findOne(id);
+  }
+
   async remove(id: string): Promise<void> {
     await this.findOne(id);
     await this.repository.delete(id);

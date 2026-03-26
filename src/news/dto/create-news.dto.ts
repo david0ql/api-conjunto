@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsUUID, IsDateString, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsUUID, IsDateString, MaxLength, IsOptional, IsUrl } from 'class-validator';
 
 export class CreateNewsDto {
   @IsString()
@@ -17,4 +17,12 @@ export class CreateNewsDto {
   @IsUUID()
   @IsNotEmpty()
   categoryId: string;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  createdByEmployeeId?: string;
 }

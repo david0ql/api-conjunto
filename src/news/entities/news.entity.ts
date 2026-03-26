@@ -30,6 +30,9 @@ export class News {
   @Column({ name: 'created_by_employee_id' })
   createdByEmployeeId: string;
 
+  @Column({ name: 'image_url', type: 'text', nullable: true })
+  imageUrl: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }

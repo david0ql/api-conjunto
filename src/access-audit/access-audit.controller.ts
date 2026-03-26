@@ -2,22 +2,35 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@n
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { EmployeeGuard } from '../common/guards/employee.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
+import { ResidentGuard } from '../common/guards/resident.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { AccessAuditService } from './access-audit.service';
 import { CreateAccessAuditDto } from './dto/create-access-audit.dto';
 import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
 import { EmployeeOrResidentGuard } from '../common/guards/employee-or-resident.guard';
+import { ResidentsService } from '../residents/residents.service';
 
 @UseGuards(JwtAuthGuard)
 @Controller('access-audit')
 export class AccessAuditController {
-  constructor(private readonly service: AccessAuditService) {}
+  constructor(
+    private readonly service: AccessAuditService,
+    private readonly residentsService: ResidentsService,
+  ) {}
 
   @Get()
   @UseGuards(EmployeeOrResidentGuard)
   findAll() {
     return this.service.findAll();
+  }
+
+  @Get('my')
+  @UseGuards(ResidentGuard)
+  async findMy(@CurrentUser() user: JwtPayload) {
+    const resident = await this.residentsService.findOne(user.sub);
+    if (!resident.apartmentId) return [];
+    return this.service.findByApartment(resident.apartmentId);
   }
 
   @Get(':id')

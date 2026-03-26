@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { EmployeeGuard } from '../common/guards/employee.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { ResidentGuard } from '../common/guards/resident.guard';
+import { EmployeeOrResidentGuard } from '../common/guards/employee-or-resident.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PackagesService } from './packages.service';
@@ -102,7 +103,7 @@ export class PackagesController {
   }
 
   @Get(':id/photos')
-  @UseGuards(EmployeeGuard)
+  @UseGuards(EmployeeOrResidentGuard)
   getPhotos(@Param('id') id: string) {
     return this.service.getPhotos(id);
   }

@@ -1,10 +1,11 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { Resident } from '../residents/entities/resident.entity';
 import { Employee } from '../employees/entities/employee.entity';
+import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
 import { ResidentLoginDto } from './dto/resident-login.dto';
 import { EmployeeLoginDto } from './dto/employee-login.dto';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
@@ -16,6 +17,8 @@ export class AuthService {
     private residentsRepository: Repository<Resident>,
     @InjectRepository(Employee)
     private employeesRepository: Repository<Employee>,
+    @InjectRepository(ResidentApartment)
+    private residentApartmentsRepository: Repository<ResidentApartment>,
     private jwtService: JwtService,
   ) {}
 
@@ -42,6 +45,14 @@ export class AuthService {
     const isValid = await bcrypt.compare(dto.password, resident.passwordHash);
     if (!isValid) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Mobile residents must have at least one apartment assigned
+    const hasApartment =
+      !!resident.apartmentId ||
+      (await this.residentApartmentsRepository.count({ where: { residentId: resident.id } })) > 0;
+    if (!hasApartment) {
+      throw new ForbiddenException('No tiene un apartamento asignado. Contacte a la administración.');
     }
 
     const payload: JwtPayload = { sub: resident.id, type: 'resident' };

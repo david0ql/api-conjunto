@@ -24,6 +24,16 @@ export class ResidentsController {
     return this.service.findOne(user.sub);
   }
 
+  @Get('me/apartments')
+  getMyApartments(@CurrentUser() user: JwtPayload) {
+    return this.service.getMyApartments(user.sub);
+  }
+
+  @Get('me/qr')
+  getMyQr(@CurrentUser() user: JwtPayload) {
+    return this.service.getQrCode(user.sub);
+  }
+
   @Get(':id')
   @UseGuards(EmployeeGuard)
   findOne(@Param('id') id: string) {

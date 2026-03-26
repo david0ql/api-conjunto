@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { Resident } from '../residents/entities/resident.entity';
 import { Employee } from '../employees/entities/employee.entity';
+import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { Employee } from '../employees/entities/employee.entity';
         signOptions: { expiresIn: (process.env.JWT_EXPIRES_IN ?? '7d') as any },
       }),
     }),
-    TypeOrmModule.forFeature([Resident, Employee]),
+    TypeOrmModule.forFeature([Resident, Employee, ResidentApartment]),
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
