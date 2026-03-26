@@ -17,7 +17,4 @@ export class CreateNewsDto {
   @IsUUID()
   @IsNotEmpty()
   categoryId: string;
-
-  // set from JWT in controller, not from body
-  createdByEmployeeId?: string;
 }
