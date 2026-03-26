@@ -191,6 +191,10 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     const call = await this.callsService.ensureCanSignal(body.callId, user);
+    if (!call) {
+      return;
+    }
+
     const targetUser =
       user.type === 'employee'
         ? call.acceptedByResidentId

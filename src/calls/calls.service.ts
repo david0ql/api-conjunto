@@ -241,6 +241,10 @@ export class CallsService {
       throw new ForbiddenException('El usuario autenticado no participa en esta llamada');
     }
 
+    if (call.status !== 'active') {
+      return null;
+    }
+
     return call;
   }
 
