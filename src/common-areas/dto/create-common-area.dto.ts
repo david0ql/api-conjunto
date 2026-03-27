@@ -6,6 +6,10 @@ export class CreateCommonAreaDto {
   @MaxLength(50)
   name: string;
 
+  @IsString()
+  @IsOptional()
+  description?: string;
+
   @IsInt()
   @Min(1)
   @IsOptional()

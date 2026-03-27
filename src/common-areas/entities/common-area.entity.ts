@@ -8,6 +8,9 @@ export class CommonArea {
   @Column({ length: 50, unique: true })
   name: string;
 
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
   @Column({ name: 'max_capacity', type: 'int', nullable: true })
   maxCapacity: number;
 
