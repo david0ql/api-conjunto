@@ -28,6 +28,11 @@ import { NewsCategoriesModule } from './news-categories/news-categories.module';
 import { NewsModule } from './news/news.module';
 import { CommunitySpacesModule } from './community-spaces/community-spaces.module';
 import { CallsModule } from './calls/calls.module';
+import { AssembliesModule } from './assemblies/assemblies.module';
+import { Assembly } from './assemblies/entities/assembly.entity';
+import { AssemblyQuestion } from './assemblies/entities/assembly-question.entity';
+import { AssemblyVote } from './assemblies/entities/assembly-vote.entity';
+import { AssemblyResidentToken } from './assemblies/entities/assembly-resident-token.entity';
 
 import { ApartmentStatus } from './apartment-statuses/entities/apartment-status.entity';
 import { ResidentType } from './resident-types/entities/resident-type.entity';
@@ -76,6 +81,7 @@ import { CallSession } from './calls/entities/call-session.entity';
           Employee, Visitor, Vehicle, ResidentApartment, AccessAudit,
           PoolEntry, PoolEntryGuest, PoolEntryResident, CommonArea, Reservation, Package, PackagePhoto, Notification, SystemLog,
           NewsCategory, News, CommunitySpace, CallSession,
+          Assembly, AssemblyQuestion, AssemblyVote, AssemblyResidentToken,
         ],
         synchronize: true,
         namingStrategy: new SnakeCaseNamingStrategy(),
@@ -108,6 +114,7 @@ import { CallSession } from './calls/entities/call-session.entity';
     NewsModule,
     CommunitySpacesModule,
     CallsModule,
+    AssembliesModule,
   ],
 })
 export class AppModule {}
