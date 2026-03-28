@@ -98,6 +98,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     (call.targetResidentIds ?? []).forEach((residentId) => {
       this.server.to(this.userRoom({ sub: residentId, type: 'resident' })).emit('calls:incoming', call);
     });
+    await this.emitPorterAvailability();
     this.setTimeoutForCall(call.id);
   }
 
@@ -121,6 +122,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     (call.targetEmployeeIds ?? []).forEach((employeeId) => {
       this.server.to(this.userRoom({ sub: employeeId, type: 'employee' })).emit('calls:incoming', call);
     });
+    await this.emitPorterAvailability();
     this.setTimeoutForCall(call.id);
   }
 
@@ -172,6 +174,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             .emit('calls:accepted', call);
         });
     }
+    await this.emitPorterAvailability();
   }
 
   @SubscribeMessage('calls:reject')
@@ -204,11 +207,13 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             rejectedEmployeeIds: result.call.rejectedEmployeeIds,
           });
       }
+      await this.emitPorterAvailability();
       return;
     }
 
     this.clearTimeoutForCall(result.call.id);
     this.emitCallTerminalState('calls:rejected', result.call);
+    await this.emitPorterAvailability();
   }
 
   @SubscribeMessage('calls:end')
@@ -228,6 +233,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
     this.clearTimeoutForCall(call.id);
     this.emitCallTerminalState('calls:ended', call);
+    await this.emitPorterAvailability();
   }
 
   @SubscribeMessage('calls:signal')
@@ -344,6 +350,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           return;
         }
         this.emitCallTerminalState('calls:missed', call);
+        await this.emitPorterAvailability();
       } finally {
         this.timeoutByCallId.delete(callId);
       }
@@ -370,6 +377,11 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private userRoom(user: Pick<JwtPayload, 'sub' | 'type'>) {
     return `${user.type}:${user.sub}`;
+  }
+
+  private async emitPorterAvailability() {
+    const porters = await this.callsService.getPorters();
+    this.server.emit('calls:porters-updated', porters);
   }
 
   private userKey(user: Pick<JwtPayload, 'sub' | 'type'>) {
