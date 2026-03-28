@@ -13,6 +13,14 @@ export interface CallPeerSummary {
   lastName: string;
 }
 
+export interface CallPorterAvailabilityPayload {
+  id: string;
+  username: string;
+  name: string;
+  lastName: string;
+  available: boolean;
+}
+
 export interface CallApartmentSummary {
   id: string;
   number: string;

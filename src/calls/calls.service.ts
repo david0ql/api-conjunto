@@ -14,6 +14,7 @@ import { ResidentApartment } from '../resident-apartments/entities/resident-apar
 import { Resident } from '../residents/entities/resident.entity';
 import type {
   CallApartmentSummary,
+  CallPorterAvailabilityPayload,
   CallSessionPayload,
   IceServerConfig,
 } from './calls.types';
@@ -50,6 +51,10 @@ export class CallsService {
     if (!employee) {
       throw new NotFoundException(`Employee #${input.initiatedByEmployeeId} not found`);
     }
+    await this.assertEmployeeAvailable(
+      employee.id,
+      'Este empleado ya tiene una llamada en curso y no puede iniciar otra todavía',
+    );
 
     const targetResidentIds = await this.getTargetResidentIdsForApartment(apartment.id);
     if (targetResidentIds.length === 0) {
@@ -70,7 +75,27 @@ export class CallsService {
     return this.getPayload(saved.id);
   }
 
-  async createPorterCall(residentId: string) {
+  async getPorters(): Promise<CallPorterAvailabilityPayload[]> {
+    const porters = await this.employeesRepository
+      .createQueryBuilder('employee')
+      .innerJoinAndSelect('employee.role', 'role')
+      .where('employee.isActive = :isActive', { isActive: true })
+      .andWhere('role.code = :roleCode', { roleCode: 'porter' })
+      .orderBy('employee.username', 'ASC')
+      .getMany();
+
+    const busyEmployeeIds = await this.getBusyEmployeeIds();
+
+    return porters.map((porter) => ({
+      id: porter.id,
+      username: porter.username,
+      name: porter.name,
+      lastName: porter.lastName,
+      available: !busyEmployeeIds.has(porter.id),
+    }));
+  }
+
+  async createPorterCall(residentId: string, targetEmployeeId: string) {
     const resident = await this.residentsRepository.findOne({
       where: { id: residentId, isActive: true },
     });
@@ -78,16 +103,20 @@ export class CallsService {
       throw new NotFoundException(`Resident #${residentId} not found`);
     }
 
-    const porters = await this.employeesRepository
+    const porter = await this.employeesRepository
       .createQueryBuilder('employee')
-      .innerJoin('employee.role', 'role')
-      .where('employee.isActive = :isActive', { isActive: true })
+      .innerJoinAndSelect('employee.role', 'role')
+      .where('employee.id = :employeeId', { employeeId: targetEmployeeId })
+      .andWhere('employee.isActive = :isActive', { isActive: true })
       .andWhere('role.code = :roleCode', { roleCode: 'porter' })
-      .select('employee.id', 'id')
-      .getRawMany<{ id: string }>();
-    if (porters.length === 0) {
-      throw new ConflictException('No hay porteros disponibles en este momento');
+      .getOne();
+    if (!porter) {
+      throw new NotFoundException('El portero seleccionado no existe o no está activo');
     }
+    await this.assertEmployeeAvailable(
+      porter.id,
+      'El portero seleccionado ya está atendiendo otra llamada',
+    );
 
     const apartmentIds = await this.getApartmentIdsForResident(residentId);
 
@@ -97,7 +126,7 @@ export class CallsService {
       initiatedByResidentId: residentId,
       status: 'ringing',
       targetResidentIds: [],
-      targetEmployeeIds: porters.map((p) => p.id),
+      targetEmployeeIds: [porter.id],
       rejectedResidentIds: [],
       rejectedEmployeeIds: [],
     });
@@ -138,6 +167,11 @@ export class CallsService {
       if (!(call.targetEmployeeIds ?? []).includes(employeeId)) {
         throw new ForbiddenException('Esta llamada no pertenece al empleado autenticado');
       }
+      await this.assertEmployeeAvailable(
+        employeeId,
+        'El empleado ya está atendiendo otra llamada',
+        call.id,
+      );
       if (call.acceptedByEmployeeId && call.acceptedByEmployeeId !== employeeId) {
         throw new ConflictException('La llamada ya fue atendida por otro portero');
       }
@@ -448,6 +482,47 @@ export class CallsService {
       select: { id: true },
     });
     return activeResidents.map((resident) => resident.id);
+  }
+
+  private async assertEmployeeAvailable(
+    employeeId: string,
+    message: string,
+    excludeCallId?: string,
+  ) {
+    const busyEmployeeIds = await this.getBusyEmployeeIds(excludeCallId);
+    if (busyEmployeeIds.has(employeeId)) {
+      throw new ConflictException(message);
+    }
+  }
+
+  private async getBusyEmployeeIds(excludeCallId?: string) {
+    const openCalls = await this.callSessionsRepository.find({
+      where: [{ status: 'ringing' }, { status: 'active' }],
+      select: {
+        id: true,
+        initiatedByEmployeeId: true,
+        acceptedByEmployeeId: true,
+        targetEmployeeIds: true,
+      },
+    });
+
+    const busyEmployeeIds = new Set<string>();
+    for (const call of openCalls) {
+      if (excludeCallId && call.id === excludeCallId) {
+        continue;
+      }
+      if (call.initiatedByEmployeeId) {
+        busyEmployeeIds.add(call.initiatedByEmployeeId);
+      }
+      if (call.acceptedByEmployeeId) {
+        busyEmployeeIds.add(call.acceptedByEmployeeId);
+      }
+      for (const employeeId of call.targetEmployeeIds ?? []) {
+        busyEmployeeIds.add(employeeId);
+      }
+    }
+
+    return busyEmployeeIds;
   }
 
   private toApartmentSummary(apartment: Apartment): CallApartmentSummary {

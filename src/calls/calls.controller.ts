@@ -8,6 +8,11 @@ import { CallsService } from './calls.service';
 export class CallsController {
   constructor(private readonly callsService: CallsService) {}
 
+  @Get('porters')
+  getPorters() {
+    return this.callsService.getPorters();
+  }
+
   @Get('ice-config')
   getIceConfig() {
     return {

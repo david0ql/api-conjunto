@@ -104,13 +104,17 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('calls:call-porter')
   async handleCallPorter(
     @ConnectedSocket() client: SocketWithUser,
+    @MessageBody() body: { employeeId?: string },
   ) {
     const user = this.requireUser(client);
     if (user.type !== 'resident') {
       throw new WsException('Solo residentes pueden llamar a porteria');
     }
+    if (!body.employeeId) {
+      throw new WsException('employeeId is required');
+    }
 
-    const call = await this.callsService.createPorterCall(user.sub);
+    const call = await this.callsService.createPorterCall(user.sub, body.employeeId);
 
     this.server.in(this.userRoom(user)).socketsJoin(this.callRoom(call.id));
     this.server.to(this.userRoom(user)).emit('calls:outgoing', call);
