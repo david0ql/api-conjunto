@@ -19,6 +19,15 @@ export interface CallPorterAvailabilityPayload {
   name: string;
   lastName: string;
   available: boolean;
+  status: 'available' | 'busy';
+  currentCall: {
+    callId: string;
+    direction: CallDirection;
+    status: Extract<CallSessionStatus, 'ringing' | 'active'>;
+    withType: 'resident' | 'employee' | 'apartment';
+    withLabel: string;
+    apartment: CallApartmentSummary | null;
+  } | null;
 }
 
 export interface CallApartmentSummary {

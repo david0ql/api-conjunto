@@ -11,7 +11,7 @@ import { Employee } from '../../employees/entities/employee.entity';
 import { Resident } from '../../residents/entities/resident.entity';
 
 export type CallSessionStatus = 'ringing' | 'active' | 'ended' | 'missed' | 'rejected';
-export type CallDirection = 'outbound' | 'inbound';
+export type CallDirection = 'outbound' | 'inbound' | 'internal';
 
 @Entity('call_sessions')
 export class CallSession {

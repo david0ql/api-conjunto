@@ -126,6 +126,33 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.setTimeoutForCall(call.id);
   }
 
+  @SubscribeMessage('calls:initiate-porter')
+  async handleInitiatePorter(
+    @ConnectedSocket() client: SocketWithUser,
+    @MessageBody() body: { employeeId?: string },
+  ) {
+    const user = this.requireUser(client);
+    if (user.type !== 'employee' || user.role !== 'porter') {
+      throw new WsException('Solo porteria puede iniciar llamadas internas');
+    }
+    if (!body.employeeId) {
+      throw new WsException('employeeId is required');
+    }
+
+    const call = await this.callsService.createInternalPorterCall({
+      initiatedByEmployeeId: user.sub,
+      targetEmployeeId: body.employeeId,
+    });
+
+    this.server.in(this.userRoom(user)).socketsJoin(this.callRoom(call.id));
+    this.server.to(this.userRoom(user)).emit('calls:outgoing', call);
+    (call.targetEmployeeIds ?? []).forEach((employeeId) => {
+      this.server.to(this.userRoom({ sub: employeeId, type: 'employee' })).emit('calls:incoming', call);
+    });
+    await this.emitPorterAvailability();
+    this.setTimeoutForCall(call.id);
+  }
+
   @SubscribeMessage('calls:accept')
   async handleAccept(
     @ConnectedSocket() client: SocketWithUser,
@@ -157,7 +184,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             .to(this.userRoom({ sub: residentId, type: 'resident' }))
             .emit('calls:accepted', call);
         });
-    } else {
+    } else if (call.direction === 'inbound') {
       // Inbound: employee (porter) accepted, notify the initiating resident
       if (call.initiatedByResidentId) {
         this.server
@@ -173,6 +200,13 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             .to(this.userRoom({ sub: employeeId, type: 'employee' }))
             .emit('calls:accepted', call);
         });
+    } else {
+      if (call.initiatedByEmployeeId) {
+        this.server
+          .in(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
+          .socketsJoin(this.callRoom(call.id));
+      }
+      this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
     }
     await this.emitPorterAvailability();
   }
@@ -202,6 +236,14 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.server
           .to(this.userRoom({ sub: result.call.initiatedByResidentId, type: 'resident' }))
           .emit('calls:porter-rejected', {
+            callId: result.call.id,
+            employeeId: user.sub,
+            rejectedEmployeeIds: result.call.rejectedEmployeeIds,
+          });
+      } else if (result.call.direction === 'internal' && result.call.initiatedByEmployeeId) {
+        this.server
+          .to(this.userRoom({ sub: result.call.initiatedByEmployeeId, type: 'employee' }))
+          .emit('calls:employee-rejected', {
             callId: result.call.id,
             employeeId: user.sub,
             rejectedEmployeeIds: result.call.rejectedEmployeeIds,
@@ -327,10 +369,21 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           .to(this.userRoom({ sub: residentId, type: 'resident' }))
           .emit(eventName, call);
       });
-    } else {
+    } else if (call.direction === 'inbound') {
       if (call.initiatedByResidentId) {
         this.server
           .to(this.userRoom({ sub: call.initiatedByResidentId, type: 'resident' }))
+          .emit(eventName, call);
+      }
+      (call.targetEmployeeIds ?? []).forEach((employeeId) => {
+        this.server
+          .to(this.userRoom({ sub: employeeId, type: 'employee' }))
+          .emit(eventName, call);
+      });
+    } else {
+      if (call.initiatedByEmployeeId) {
+        this.server
+          .to(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
           .emit(eventName, call);
       }
       (call.targetEmployeeIds ?? []).forEach((employeeId) => {
