@@ -50,6 +50,9 @@ export class AssembliesGateway implements OnGatewayConnection, OnGatewayDisconne
       client.data.user = user;
       this.userBySocketId.set(client.id, user);
       this.registerSocket(user, client.id);
+      if (user.type === 'resident') {
+        client.join(this.residentLobbyRoom());
+      }
       this.logger.log(`Assembly WS connected ${client.id} (${user.type}:${user.sub})`);
     } catch {
       client.emit('assembly:error', { message: 'No fue posible autenticar el canal en tiempo real' });
@@ -94,6 +97,7 @@ export class AssembliesGateway implements OnGatewayConnection, OnGatewayDisconne
 
   broadcastAssemblyStarted(assemblyId: string, payload: AssemblyPayload) {
     this.server.to(this.assemblyRoom(assemblyId)).emit('assembly:started', payload);
+    this.server.to(this.residentLobbyRoom()).emit('assembly:started', payload);
   }
 
   broadcastQuestionOpened(assemblyId: string, question: QuestionPayload) {
@@ -149,5 +153,9 @@ export class AssembliesGateway implements OnGatewayConnection, OnGatewayDisconne
 
   private assemblyRoom(assemblyId: string) {
     return `assembly:${assemblyId}`;
+  }
+
+  private residentLobbyRoom() {
+    return 'assembly:lobby:residents';
   }
 }

@@ -81,8 +81,8 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() body: { apartmentId?: string },
   ) {
     const user = this.requireUser(client);
-    if (user.type !== 'employee' || !['administrator', 'porter'].includes(user.role ?? '')) {
-      throw new WsException('Solo administradores y porteria pueden iniciar llamadas');
+    if (user.type !== 'employee' || !['administrator', 'porter', 'pool_attendant'].includes(user.role ?? '')) {
+      throw new WsException('Solo administradores, porteria y piscina pueden iniciar llamadas');
     }
     if (!body.apartmentId) {
       throw new WsException('apartmentId is required');

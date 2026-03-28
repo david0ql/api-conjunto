@@ -1,11 +1,10 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { AdminGuard } from '../common/guards/admin.guard';
+import { AdminOrPorterGuard } from '../common/guards/admin-or-porter.guard';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { EmployeeOrResidentGuard } from '../common/guards/employee-or-resident.guard';
 import { CallsService } from './calls.service';
 
 @Controller('calls')
-@UseGuards(JwtAuthGuard, EmployeeOrResidentGuard)
+@UseGuards(JwtAuthGuard)
 export class CallsController {
   constructor(private readonly callsService: CallsService) {}
 
@@ -15,7 +14,7 @@ export class CallsController {
   }
 
   @Get('history')
-  @UseGuards(AdminGuard)
+  @UseGuards(AdminOrPorterGuard)
   getHistory() {
     return this.callsService.getCallHistory();
   }
