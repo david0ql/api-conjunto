@@ -95,8 +95,27 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     this.server.in(this.userRoom(user)).socketsJoin(this.callRoom(call.id));
     this.server.to(this.userRoom(user)).emit('calls:outgoing', call);
-    call.targetResidentIds.forEach((residentId) => {
+    (call.targetResidentIds ?? []).forEach((residentId) => {
       this.server.to(this.userRoom({ sub: residentId, type: 'resident' })).emit('calls:incoming', call);
+    });
+    this.setTimeoutForCall(call.id);
+  }
+
+  @SubscribeMessage('calls:call-porter')
+  async handleCallPorter(
+    @ConnectedSocket() client: SocketWithUser,
+  ) {
+    const user = this.requireUser(client);
+    if (user.type !== 'resident') {
+      throw new WsException('Solo residentes pueden llamar a porteria');
+    }
+
+    const call = await this.callsService.createPorterCall(user.sub);
+
+    this.server.in(this.userRoom(user)).socketsJoin(this.callRoom(call.id));
+    this.server.to(this.userRoom(user)).emit('calls:outgoing', call);
+    (call.targetEmployeeIds ?? []).forEach((employeeId) => {
+      this.server.to(this.userRoom({ sub: employeeId, type: 'employee' })).emit('calls:incoming', call);
     });
     this.setTimeoutForCall(call.id);
   }
@@ -107,29 +126,48 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() body: { callId?: string },
   ) {
     const user = this.requireUser(client);
-    if (user.type !== 'resident') {
-      throw new WsException('Solo residentes pueden contestar llamadas');
-    }
     if (!body.callId) {
       throw new WsException('callId is required');
     }
 
-    const call = await this.callsService.acceptCall(body.callId, user.sub);
+    const call = await this.callsService.acceptCall(body.callId, { id: user.sub, type: user.type });
     this.clearTimeoutForCall(call.id);
 
     this.server.in(this.userRoom(user)).socketsJoin(this.callRoom(call.id));
-    this.server
-      .in(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
-      .socketsJoin(this.callRoom(call.id));
 
-    this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
-    call.targetResidentIds
-      .filter((residentId) => residentId !== user.sub)
-      .forEach((residentId) => {
+    if (call.direction === 'outbound') {
+      // Employee (initiator) joins call room
+      if (call.initiatedByEmployeeId) {
         this.server
-          .to(this.userRoom({ sub: residentId, type: 'resident' }))
-          .emit('calls:accepted', call);
-      });
+          .in(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
+          .socketsJoin(this.callRoom(call.id));
+      }
+      this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
+      // Notify other residents in the apartment
+      (call.targetResidentIds ?? [])
+        .filter((residentId) => residentId !== user.sub)
+        .forEach((residentId) => {
+          this.server
+            .to(this.userRoom({ sub: residentId, type: 'resident' }))
+            .emit('calls:accepted', call);
+        });
+    } else {
+      // Inbound: employee (porter) accepted, notify the initiating resident
+      if (call.initiatedByResidentId) {
+        this.server
+          .in(this.userRoom({ sub: call.initiatedByResidentId, type: 'resident' }))
+          .socketsJoin(this.callRoom(call.id));
+      }
+      this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
+      // Notify other porters that someone answered
+      (call.targetEmployeeIds ?? [])
+        .filter((employeeId) => employeeId !== user.sub)
+        .forEach((employeeId) => {
+          this.server
+            .to(this.userRoom({ sub: employeeId, type: 'employee' }))
+            .emit('calls:accepted', call);
+        });
+    }
   }
 
   @SubscribeMessage('calls:reject')
@@ -138,22 +176,30 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() body: { callId?: string },
   ) {
     const user = this.requireUser(client);
-    if (user.type !== 'resident') {
-      throw new WsException('Solo residentes pueden rechazar llamadas');
-    }
     if (!body.callId) {
       throw new WsException('callId is required');
     }
 
-    const result = await this.callsService.rejectCall(body.callId, user.sub);
+    const result = await this.callsService.rejectCall(body.callId, { id: user.sub, type: user.type });
+
     if (!result.terminal) {
-      this.server
-        .to(this.userRoom({ sub: result.call.initiatedByEmployeeId, type: 'employee' }))
-        .emit('calls:resident-rejected', {
-          callId: result.call.id,
-          residentId: user.sub,
-          rejectedResidentIds: result.call.rejectedResidentIds,
-        });
+      if (result.call.direction === 'outbound' && result.call.initiatedByEmployeeId) {
+        this.server
+          .to(this.userRoom({ sub: result.call.initiatedByEmployeeId, type: 'employee' }))
+          .emit('calls:resident-rejected', {
+            callId: result.call.id,
+            residentId: user.sub,
+            rejectedResidentIds: result.call.rejectedResidentIds,
+          });
+      } else if (result.call.direction === 'inbound' && result.call.initiatedByResidentId) {
+        this.server
+          .to(this.userRoom({ sub: result.call.initiatedByResidentId, type: 'resident' }))
+          .emit('calls:porter-rejected', {
+            callId: result.call.id,
+            employeeId: user.sub,
+            rejectedEmployeeIds: result.call.rejectedEmployeeIds,
+          });
+      }
       return;
     }
 
@@ -195,14 +241,9 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    const targetUser =
-      user.type === 'employee'
-        ? call.acceptedByResidentId
-          ? { sub: call.acceptedByResidentId, type: 'resident' as const }
-          : null
-        : { sub: call.initiatedByEmployeeId, type: 'employee' as const };
+    const targetUser = this.callsService.getSignalTarget(call, user);
     if (!targetUser) {
-      throw new WsException('Todavia no hay un residente atendiendo la llamada');
+      throw new WsException('No hay un participante disponible para recibir la señal');
     }
 
     this.server.to(this.userRoom(targetUser)).emit('calls:signal', {
@@ -264,14 +305,30 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     call: Awaited<ReturnType<CallsService['getPayload']>>,
   ) {
     this.server.to(this.callRoom(call.id)).emit(eventName, call);
-    this.server
-      .to(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
-      .emit(eventName, call);
-    call.targetResidentIds.forEach((residentId) => {
-      this.server
-        .to(this.userRoom({ sub: residentId, type: 'resident' }))
-        .emit(eventName, call);
-    });
+
+    if (call.direction === 'outbound') {
+      if (call.initiatedByEmployeeId) {
+        this.server
+          .to(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
+          .emit(eventName, call);
+      }
+      (call.targetResidentIds ?? []).forEach((residentId) => {
+        this.server
+          .to(this.userRoom({ sub: residentId, type: 'resident' }))
+          .emit(eventName, call);
+      });
+    } else {
+      if (call.initiatedByResidentId) {
+        this.server
+          .to(this.userRoom({ sub: call.initiatedByResidentId, type: 'resident' }))
+          .emit(eventName, call);
+      }
+      (call.targetEmployeeIds ?? []).forEach((employeeId) => {
+        this.server
+          .to(this.userRoom({ sub: employeeId, type: 'employee' }))
+          .emit(eventName, call);
+      });
+    }
   }
 
   private setTimeoutForCall(callId: string) {

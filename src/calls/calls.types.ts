@@ -1,5 +1,5 @@
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
-import type { CallSessionStatus } from './entities/call-session.entity';
+import type { CallDirection, CallSessionStatus } from './entities/call-session.entity';
 
 export interface IceServerConfig {
   urls: string | string[];
@@ -27,14 +27,21 @@ export interface CallApartmentSummary {
 export interface CallSessionPayload {
   id: string;
   status: CallSessionStatus;
-  apartmentId: string;
+  direction: CallDirection;
+  apartmentId: string | null;
   apartment: CallApartmentSummary | null;
-  initiatedByEmployeeId: string;
+  initiatedByEmployeeId: string | null;
   initiatedByEmployee: CallPeerSummary | null;
+  initiatedByResidentId: string | null;
+  initiatedByResident: CallPeerSummary | null;
   acceptedByResidentId: string | null;
   acceptedByResident: CallPeerSummary | null;
+  acceptedByEmployeeId: string | null;
+  acceptedByEmployee: CallPeerSummary | null;
   targetResidentIds: string[];
+  targetEmployeeIds: string[];
   rejectedResidentIds: string[];
+  rejectedEmployeeIds: string[];
   endedByUserId: string | null;
   endedByUserType: JwtPayload['type'] | null;
   endedReason: string | null;
