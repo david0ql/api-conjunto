@@ -51,7 +51,7 @@ export class AssemblyVote {
   @Column({ name: 'is_valid', default: true })
   isValid: boolean;
 
-  @Column({ name: 'rejected_reason', length: 100, nullable: true })
+  @Column({ name: 'rejected_reason', type: 'varchar', length: 100, nullable: true })
   rejectedReason: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
