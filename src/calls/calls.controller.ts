@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AdminOrPorterGuard } from '../common/guards/admin-or-porter.guard';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -7,18 +8,43 @@ import { CallsPushService } from './calls-push.service';
 import { CallsService } from './calls.service';
 
 class RegisterCallDeviceDto {
+  @IsString()
   token: string;
+
+  @IsIn(['android', 'ios'])
   platform: 'android' | 'ios';
+
+  @IsIn(['fcm', 'voip'])
   channel: 'fcm' | 'voip';
+
+  @IsOptional()
+  @IsIn(['development', 'production', null])
   environment?: 'development' | 'production' | null;
+
+  @IsOptional()
+  @IsString()
   deviceId?: string | null;
+
+  @IsOptional()
+  @IsString()
   appVersion?: string | null;
 }
 
 class UnregisterCallDeviceDto {
+  @IsOptional()
+  @IsString()
   token?: string;
+
+  @IsOptional()
+  @IsIn(['android', 'ios'])
   platform?: 'android' | 'ios';
+
+  @IsOptional()
+  @IsIn(['fcm', 'voip'])
   channel?: 'fcm' | 'voip';
+
+  @IsOptional()
+  @IsString()
   deviceId?: string | null;
 }
 
