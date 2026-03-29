@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging, type Messaging, type MulticastMessage } from 'firebase-admin/messaging';
-import apn from 'apn';
+import apn from '@parse/node-apn';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { In, Repository } from 'typeorm';
@@ -205,6 +205,7 @@ export class CallsPushService {
       note.priority = 10;
       note.expiry = Math.floor(Date.now() / 1000) + 60;
       note.contentAvailable = true;
+      note.pushType = 'voip';
       note.payload = {
         kind: 'call',
         event: 'incoming',
@@ -214,14 +215,6 @@ export class CallsPushService {
         handle: this.getHandle(call),
         session: call,
       };
-      const noteWithHeaders = note as apn.Notification & { headers?: () => Record<string, string> };
-      const originalHeaders = typeof noteWithHeaders.headers === 'function'
-        ? noteWithHeaders.headers.bind(noteWithHeaders)
-        : () => ({});
-      noteWithHeaders.headers = () => ({
-        ...originalHeaders(),
-        'apns-push-type': 'voip',
-      });
 
       try {
         const response = await provider.send(note, group.map((device) => device.token));
