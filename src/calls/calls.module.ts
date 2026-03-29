@@ -7,7 +7,9 @@ import { ResidentApartment } from '../resident-apartments/entities/resident-apar
 import { Resident } from '../residents/entities/resident.entity';
 import { CallsController } from './calls.controller';
 import { CallsGateway } from './calls.gateway';
+import { CallsPushService } from './calls-push.service';
 import { CallsService } from './calls.service';
+import { CallDevice } from './entities/call-device.entity';
 import { CallSession } from './entities/call-session.entity';
 
 @Module({
@@ -19,6 +21,7 @@ import { CallSession } from './entities/call-session.entity';
     }),
     TypeOrmModule.forFeature([
       CallSession,
+      CallDevice,
       Apartment,
       Employee,
       Resident,
@@ -26,7 +29,7 @@ import { CallSession } from './entities/call-session.entity';
     ]),
   ],
   controllers: [CallsController],
-  providers: [CallsService, CallsGateway],
-  exports: [CallsService],
+  providers: [CallsService, CallsPushService, CallsGateway],
+  exports: [CallsService, CallsPushService],
 })
 export class CallsModule {}

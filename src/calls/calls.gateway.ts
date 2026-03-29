@@ -13,6 +13,7 @@ import { WsException } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import type { CallSignalEnvelope } from './calls.types';
+import { CallsPushService } from './calls-push.service';
 import { CallsService } from './calls.service';
 
 type SocketWithUser = Socket & { data: { user?: JwtPayload } };
@@ -41,6 +42,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(
     private readonly callsService: CallsService,
+    private readonly callsPushService: CallsPushService,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -98,6 +100,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     (call.targetResidentIds ?? []).forEach((residentId) => {
       this.server.to(this.userRoom({ sub: residentId, type: 'resident' })).emit('calls:incoming', call);
     });
+    await this.callsPushService.sendResidentIncomingCall(call);
     await this.emitPorterAvailability();
     this.setTimeoutForCall(call.id);
   }
@@ -176,6 +179,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           .socketsJoin(this.callRoom(call.id));
       }
       this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
+      await this.callsPushService.sendResidentCallState(call, 'accepted');
       // Notify other residents in the apartment
       (call.targetResidentIds ?? [])
         .filter((residentId) => residentId !== user.sub)
@@ -255,6 +259,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     this.clearTimeoutForCall(result.call.id);
     this.emitCallTerminalState('calls:rejected', result.call);
+    await this.callsPushService.sendResidentCallState(result.call, 'rejected');
     await this.emitPorterAvailability();
   }
 
@@ -275,6 +280,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
     this.clearTimeoutForCall(call.id);
     this.emitCallTerminalState('calls:ended', call);
+    await this.callsPushService.sendResidentCallState(call, 'ended');
     await this.emitPorterAvailability();
   }
 
@@ -403,6 +409,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           return;
         }
         this.emitCallTerminalState('calls:missed', call);
+        await this.callsPushService.sendResidentCallState(call, 'missed');
         await this.emitPorterAvailability();
       } finally {
         this.timeoutByCallId.delete(callId);

@@ -60,6 +60,7 @@ import { Tower } from './towers/entities/tower.entity';
 import { NewsCategory } from './news-categories/entities/news-category.entity';
 import { News } from './news/entities/news.entity';
 import { CommunitySpace } from './community-spaces/entities/community-space.entity';
+import { CallDevice } from './calls/entities/call-device.entity';
 import { CallSession } from './calls/entities/call-session.entity';
 
 @Module({
@@ -80,7 +81,7 @@ import { CallSession } from './calls/entities/call-session.entity';
           ReservationStatus, NotificationType, Tower, Apartment, Resident,
           Employee, Visitor, Vehicle, ResidentApartment, AccessAudit,
           PoolEntry, PoolEntryGuest, PoolEntryResident, CommonArea, Reservation, Package, PackagePhoto, Notification, SystemLog,
-          NewsCategory, News, CommunitySpace, CallSession,
+          NewsCategory, News, CommunitySpace, CallDevice, CallSession,
           Assembly, AssemblyQuestion, AssemblyVote, AssemblyResidentToken,
         ],
         synchronize: true,
