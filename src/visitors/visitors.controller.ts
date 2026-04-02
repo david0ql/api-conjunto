@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { EmployeeGuard } from '../common/guards/employee.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
@@ -15,6 +15,16 @@ export class VisitorsController {
   @UseGuards(EmployeeGuard)
   findAll() {
     return this.service.findAll();
+  }
+
+  @Get('search')
+  @UseGuards(EmployeeGuard)
+  findByDocument(@Query('document') document?: string) {
+    const normalizedDocument = document?.trim();
+    if (!normalizedDocument) {
+      throw new BadRequestException('Document is required');
+    }
+    return this.service.findByDocumentWithLastAccess(normalizedDocument);
   }
 
   @Get(':id')
