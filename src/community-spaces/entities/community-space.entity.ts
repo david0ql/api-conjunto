@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany } from 'typeorm';
+import { CommunitySpaceSchedule } from './community-space-schedule.entity';
 
 @Entity('community_spaces')
 export class CommunitySpace {
@@ -19,4 +20,10 @@ export class CommunitySpace {
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
+
+  @OneToMany(() => CommunitySpaceSchedule, (schedule) => schedule.communitySpace, {
+    cascade: ['insert', 'update'],
+    eager: true,
+  })
+  schedules: CommunitySpaceSchedule[];
 }

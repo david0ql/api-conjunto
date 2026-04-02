@@ -294,6 +294,83 @@ async function seed() {
   }
   console.log(`   ✓ 3 entradas a piscina`);
 
+  // ─── Community Spaces & Schedules ──────────────────────────────
+  console.log('🏘️ Creando zonas comunes y horarios...');
+  await q(`
+    INSERT INTO community_spaces (id, name, phase, description, is_active)
+    SELECT uuidv7(), 'Parque infantil', 'Fase A', 'Zona de juegos para niños', true
+    WHERE NOT EXISTS (
+      SELECT 1 FROM community_spaces WHERE name = 'Parque infantil' AND phase = 'Fase A'
+    )
+  `);
+  await q(`
+    INSERT INTO community_spaces (id, name, phase, description, is_active)
+    SELECT uuidv7(), 'Sendero ecológico', 'Fase B', 'Circuito peatonal con jardines', true
+    WHERE NOT EXISTS (
+      SELECT 1 FROM community_spaces WHERE name = 'Sendero ecológico' AND phase = 'Fase B'
+    )
+  `);
+  await q(`
+    INSERT INTO community_spaces (id, name, phase, description, is_active)
+    SELECT uuidv7(), 'Plazoleta central', 'Fase C', 'Espacio abierto para integración', true
+    WHERE NOT EXISTS (
+      SELECT 1 FROM community_spaces WHERE name = 'Plazoleta central' AND phase = 'Fase C'
+    )
+  `);
+
+  const communitySpaces: Array<{ id: string; name: string }> = await q(`
+    SELECT id, name FROM community_spaces
+    WHERE (name = 'Parque infantil' AND phase = 'Fase A')
+       OR (name = 'Sendero ecológico' AND phase = 'Fase B')
+       OR (name = 'Plazoleta central' AND phase = 'Fase C')
+  `);
+
+  const scheduleRowsByName: Record<string, Array<{ day: number; isOpen: boolean; start: string | null; end: string | null }>> = {
+    'Parque infantil': [
+      { day: 0, isOpen: false, start: null, end: null },
+      { day: 1, isOpen: true, start: '08:00', end: '18:00' },
+      { day: 2, isOpen: true, start: '08:00', end: '18:00' },
+      { day: 3, isOpen: true, start: '08:00', end: '18:00' },
+      { day: 4, isOpen: true, start: '08:00', end: '18:00' },
+      { day: 5, isOpen: true, start: '08:00', end: '18:00' },
+      { day: 6, isOpen: true, start: '09:00', end: '17:00' },
+    ],
+    'Sendero ecológico': [
+      { day: 0, isOpen: true, start: '06:00', end: '20:00' },
+      { day: 1, isOpen: true, start: '06:00', end: '21:00' },
+      { day: 2, isOpen: true, start: '06:00', end: '21:00' },
+      { day: 3, isOpen: true, start: '06:00', end: '21:00' },
+      { day: 4, isOpen: true, start: '06:00', end: '21:00' },
+      { day: 5, isOpen: true, start: '06:00', end: '21:00' },
+      { day: 6, isOpen: true, start: '06:00', end: '20:00' },
+    ],
+    'Plazoleta central': [
+      { day: 0, isOpen: true, start: '09:00', end: '22:00' },
+      { day: 1, isOpen: false, start: null, end: null },
+      { day: 2, isOpen: true, start: '10:00', end: '20:00' },
+      { day: 3, isOpen: true, start: '10:00', end: '20:00' },
+      { day: 4, isOpen: true, start: '10:00', end: '20:00' },
+      { day: 5, isOpen: true, start: '10:00', end: '22:00' },
+      { day: 6, isOpen: true, start: '09:00', end: '22:00' },
+    ],
+  };
+
+  for (const space of communitySpaces) {
+    const rows = scheduleRowsByName[space.name] ?? [];
+    for (const row of rows) {
+      await q(`
+        INSERT INTO community_space_schedules (id, community_space_id, day_of_week, is_open, start_time, end_time)
+        VALUES (uuidv7(), $1, $2, $3, $4, $5)
+        ON CONFLICT (community_space_id, day_of_week)
+        DO UPDATE SET
+          is_open = EXCLUDED.is_open,
+          start_time = EXCLUDED.start_time,
+          end_time = EXCLUDED.end_time
+      `, [space.id, row.day, row.isOpen, row.start, row.end]);
+    }
+  }
+  console.log(`   ✓ 3 zonas comunes con horario semanal`);
+
   // ─── Reservations ───────────────────────────────────────────────
   console.log('📅 Creando reservas...');
   await q(`
