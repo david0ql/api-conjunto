@@ -484,6 +484,43 @@ export class CallsService {
     return this.getPayload(call.id);
   }
 
+  async endOpenCallsForActor(
+    actor: { id: string; type: JwtPayload['type'] },
+    reason = 'socket_disconnect',
+  ): Promise<CallSessionPayload[]> {
+    const openCalls = await this.callSessionsRepository.find({
+      where: [{ status: 'ringing' }, { status: 'active' }],
+      select: {
+        id: true,
+        status: true,
+        direction: true,
+        initiatedByEmployeeId: true,
+        initiatedByResidentId: true,
+        acceptedByResidentId: true,
+        acceptedByEmployeeId: true,
+      },
+    });
+
+    const results: CallSessionPayload[] = [];
+
+    for (const openCall of openCalls) {
+      if (!this.canActorEndCall(openCall, actor)) {
+        continue;
+      }
+
+      if (openCall.status !== 'ringing' && openCall.status !== 'active') {
+        continue;
+      }
+
+      try {
+        const payload = await this.endCall(openCall.id, actor, reason);
+        results.push(payload);
+      } catch {}
+    }
+
+    return results;
+  }
+
   async getPayload(callId: string): Promise<CallSessionPayload> {
     const call = await this.callSessionsRepository.findOne({
       where: { id: callId },
@@ -855,5 +892,51 @@ export class CallsService {
           }
         : null,
     };
+  }
+
+  private canActorEndCall(
+    call: Pick<
+      CallSession,
+      | 'direction'
+      | 'initiatedByEmployeeId'
+      | 'initiatedByResidentId'
+      | 'acceptedByResidentId'
+      | 'acceptedByEmployeeId'
+    >,
+    actor: { id: string; type: JwtPayload['type'] },
+  ) {
+    const isOutboundInitiator =
+      call.direction === 'outbound' &&
+      actor.type === 'employee' &&
+      call.initiatedByEmployeeId === actor.id;
+    const isInboundInitiator =
+      call.direction === 'inbound' &&
+      actor.type === 'resident' &&
+      call.initiatedByResidentId === actor.id;
+    const isInternalInitiator =
+      call.direction === 'internal' &&
+      actor.type === 'employee' &&
+      call.initiatedByEmployeeId === actor.id;
+    const isOutboundAcceptor =
+      call.direction === 'outbound' &&
+      actor.type === 'resident' &&
+      call.acceptedByResidentId === actor.id;
+    const isInboundAcceptor =
+      call.direction === 'inbound' &&
+      actor.type === 'employee' &&
+      call.acceptedByEmployeeId === actor.id;
+    const isInternalAcceptor =
+      call.direction === 'internal' &&
+      actor.type === 'employee' &&
+      call.acceptedByEmployeeId === actor.id;
+
+    return (
+      isOutboundInitiator ||
+      isInboundInitiator ||
+      isInternalInitiator ||
+      isOutboundAcceptor ||
+      isInboundAcceptor ||
+      isInternalAcceptor
+    );
   }
 }

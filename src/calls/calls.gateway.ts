@@ -39,6 +39,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly socketsByUserKey = new Map<string, Set<string>>();
   private readonly userBySocketId = new Map<string, JwtPayload>();
   private readonly timeoutByCallId = new Map<string, NodeJS.Timeout>();
+  private readonly disconnectCleanupByUserKey = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly callsService: CallsService,
@@ -52,6 +53,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.data.user = user;
       this.userBySocketId.set(client.id, user);
       this.registerSocket(user, client.id);
+      this.clearDisconnectCleanupForUser(user);
 
       client.join(this.userRoom(user));
       if (user.type === 'resident') {
@@ -75,6 +77,10 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     this.unregisterSocket(user, client.id);
     this.userBySocketId.delete(client.id);
+
+    if (!this.hasAnyActiveSocketForUser(user)) {
+      this.scheduleDisconnectCleanupForUser(user);
+    }
   }
 
   @SubscribeMessage('calls:initiate')
@@ -447,6 +453,67 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const sockets = this.socketsByUserKey.get(key) ?? new Set<string>();
     sockets.add(socketId);
     this.socketsByUserKey.set(key, sockets);
+  }
+
+  private hasAnyActiveSocketForUser(user: Pick<JwtPayload, 'sub' | 'type'>) {
+    const sockets = this.socketsByUserKey.get(this.userKey(user));
+    return Boolean(sockets && sockets.size > 0);
+  }
+
+  private scheduleDisconnectCleanupForUser(user: JwtPayload) {
+    const key = this.userKey(user);
+    this.clearDisconnectCleanupForUser(user);
+
+    const timeout = setTimeout(() => {
+      void this.cleanupDisconnectedUserCalls(user);
+    }, 8_000);
+
+    this.disconnectCleanupByUserKey.set(key, timeout);
+  }
+
+  private clearDisconnectCleanupForUser(user: Pick<JwtPayload, 'sub' | 'type'>) {
+    const key = this.userKey(user);
+    const timeout = this.disconnectCleanupByUserKey.get(key);
+    if (!timeout) {
+      return;
+    }
+    clearTimeout(timeout);
+    this.disconnectCleanupByUserKey.delete(key);
+  }
+
+  private async cleanupDisconnectedUserCalls(user: JwtPayload) {
+    this.disconnectCleanupByUserKey.delete(this.userKey(user));
+    if (this.hasAnyActiveSocketForUser(user)) {
+      return;
+    }
+
+    const endedCalls = await this.callsService.endOpenCallsForActor({
+      id: user.sub,
+      type: user.type,
+    }, 'socket_disconnect');
+
+    if (endedCalls.length === 0) {
+      return;
+    }
+
+    for (const call of endedCalls) {
+      this.clearTimeoutForCall(call.id);
+      this.emitCallTerminalState('calls:ended', call);
+      await this.callsPushService.sendResidentCallState(call, 'ended');
+      void this.callsService.recordTrace(call.id, {
+        source: 'api',
+        stage: 'call.ended.disconnect_cleanup',
+        message: 'Llamada cerrada por desconexión del participante',
+        actorUserId: user.sub,
+        actorUserType: user.type,
+        metadata: {
+          reason: 'socket_disconnect',
+          direction: call.direction,
+        },
+      }).catch(() => undefined);
+    }
+
+    await this.emitPorterAvailability();
   }
 
   private unregisterSocket(user: JwtPayload, socketId: string) {
