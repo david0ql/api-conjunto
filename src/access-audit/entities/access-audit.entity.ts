@@ -18,28 +18,28 @@ export class AccessAudit {
   @JoinColumn({ name: 'resident_id' })
   resident: Resident;
 
-  @Column({ name: 'resident_id', nullable: true })
+  @Column({ name: 'resident_id', type: 'uuid', nullable: true })
   residentId: string | null;
 
   @ManyToOne(() => Visitor, { nullable: true, eager: false })
   @JoinColumn({ name: 'visitor_id' })
   visitor: Visitor;
 
-  @Column({ name: 'visitor_id', nullable: true })
+  @Column({ name: 'visitor_id', type: 'uuid', nullable: true })
   visitorId: string | null;
 
   @ManyToOne(() => Vehicle, { nullable: true, eager: false })
   @JoinColumn({ name: 'vehicle_id' })
   vehicle: Vehicle;
 
-  @Column({ name: 'vehicle_id', nullable: true })
+  @Column({ name: 'vehicle_id', type: 'uuid', nullable: true })
   vehicleId: string | null;
 
   @ManyToOne(() => Apartment, { nullable: true, eager: false })
   @JoinColumn({ name: 'apartment_id' })
   apartment: Apartment;
 
-  @Column({ name: 'apartment_id', nullable: true })
+  @Column({ name: 'apartment_id', type: 'uuid', nullable: true })
   apartmentId: string | null;
 
   @Column({ name: 'entry_time', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
@@ -52,19 +52,19 @@ export class AccessAudit {
   @JoinColumn({ name: 'vehicle_brand_id' })
   vehicleBrand: VehicleBrand;
 
-  @Column({ name: 'vehicle_brand_id', nullable: true })
+  @Column({ name: 'vehicle_brand_id', type: 'uuid', nullable: true })
   vehicleBrandId: string | null;
 
-  @Column({ name: 'vehicle_color', length: 40, nullable: true })
+  @Column({ name: 'vehicle_color', type: 'varchar', length: 40, nullable: true })
   vehicleColor: string | null;
 
-  @Column({ name: 'vehicle_plate', length: 15, nullable: true })
+  @Column({ name: 'vehicle_plate', type: 'varchar', length: 15, nullable: true })
   vehiclePlate: string | null;
 
-  @Column({ name: 'vehicle_model', length: 60, nullable: true })
+  @Column({ name: 'vehicle_model', type: 'varchar', length: 60, nullable: true })
   vehicleModel: string | null;
 
-  @Column({ name: 'visitor_photo_path', nullable: true })
+  @Column({ name: 'visitor_photo_path', type: 'varchar', length: 255, nullable: true })
   visitorPhotoPath: string | null;
 
   @Column({ name: 'exit_time', type: 'timestamptz', nullable: true })
@@ -74,7 +74,7 @@ export class AccessAudit {
   @JoinColumn({ name: 'authorized_by_employee_id' })
   authorizedByEmployee: Employee;
 
-  @Column({ name: 'authorized_by_employee_id', nullable: true })
+  @Column({ name: 'authorized_by_employee_id', type: 'uuid', nullable: true })
   authorizedByEmployeeId: string | null;
 
   @Column({ type: 'text', nullable: true })
