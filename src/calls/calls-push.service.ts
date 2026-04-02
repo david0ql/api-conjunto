@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { In, Repository } from 'typeorm';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import type { CallSessionPayload } from './calls.types';
+import { CallsService } from './calls.service';
 import {
   CallDevice,
   type CallDeviceChannel,
@@ -51,6 +52,7 @@ export class CallsPushService {
     @InjectRepository(CallDevice)
     private readonly callDevicesRepository: Repository<CallDevice>,
     private readonly configService: ConfigService,
+    private readonly callsService: CallsService,
   ) {}
 
   async registerDevice(user: JwtPayload, input: RegisterCallDeviceInput) {
@@ -196,6 +198,13 @@ export class CallsPushService {
   private async sendResidentFcm(call: CallSessionPayload, event: ResidentCallPushEvent) {
     const messaging = this.getMessagingClient();
     if (!messaging) {
+      await this.callsService.recordTrace(call.id, {
+        source: 'api',
+        stage: 'push.fcm.skipped',
+        message: `Push FCM omitido para evento ${event} (cliente Firebase no disponible)`,
+        level: event === 'incoming' ? 'warn' : 'info',
+        metadata: { event },
+      });
       return;
     }
 
@@ -209,16 +218,29 @@ export class CallsPushService {
       },
     });
     if (devices.length === 0) {
+      await this.callsService.recordTrace(call.id, {
+        source: 'api',
+        stage: 'push.fcm.no_devices',
+        message: `No hay dispositivos FCM activos para evento ${event}`,
+        level: event === 'incoming' ? 'warn' : 'info',
+        metadata: { event },
+      });
       return;
     }
+
+    const collapseKey =
+      event === 'incoming'
+        ? undefined
+        : `call-state-${call.id}`;
 
     const message: MulticastMessage = {
       tokens: devices.map((device) => device.token),
       data: this.buildFcmData(call, event),
       android: {
         priority: 'high',
-        ttl: 1000 * 60,
-        collapseKey: `call-${call.id}`,
+        ttl: event === 'incoming' ? 1000 * 45 : 1000 * 60,
+        collapseKey,
+        directBootOk: true,
       },
       apns: {
         headers: {
@@ -237,8 +259,31 @@ export class CallsPushService {
     try {
       const result = await messaging.sendEachForMulticast(message);
       await this.handleFcmFailures(devices, result.responses.map((response) => response.error?.message ?? null));
+      await this.callsService.recordTrace(call.id, {
+        source: 'api',
+        stage: 'push.fcm.sent',
+        message: `Push FCM ${event}: ${result.successCount}/${devices.length} entregados`,
+        level: result.failureCount > 0 ? 'warn' : 'info',
+        metadata: {
+          event,
+          successCount: result.successCount,
+          failureCount: result.failureCount,
+          deviceCount: devices.length,
+        },
+      });
     } catch (error) {
       this.logger.warn(`No fue posible enviar push FCM de llamada ${call.id}: ${this.getErrorMessage(error)}`);
+      await this.callsService.recordTrace(call.id, {
+        source: 'api',
+        stage: 'push.fcm.error',
+        message: `Falló envío FCM para evento ${event}`,
+        level: 'error',
+        metadata: {
+          event,
+          error: this.getErrorMessage(error),
+          deviceCount: devices.length,
+        },
+      });
     }
   }
 
