@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { randomUUID } from 'node:crypto';
 import { Repository } from 'typeorm';
 import { CommunitySpace } from './entities/community-space.entity';
 import { CreateCommunitySpaceDto } from './dto/create-community-space.dto';
@@ -67,7 +66,6 @@ export class CommunitySpacesService {
     }
     const rows = normalized.map((schedule) =>
       this.schedulesRepository.create({
-        id: randomUUID(),
         communitySpaceId,
         dayOfWeek: schedule.dayOfWeek,
         isOpen: schedule.isOpen,
