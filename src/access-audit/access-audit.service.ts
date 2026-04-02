@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AccessAudit } from './entities/access-audit.entity';
@@ -14,7 +14,7 @@ export class AccessAuditService {
 
   async findAll(): Promise<AccessAudit[]> {
     return this.repository.find({
-      relations: ['resident', 'visitor', 'vehicle', 'apartment', 'authorizedByEmployee'],
+      relations: ['resident', 'visitor', 'vehicle', 'vehicleBrand', 'apartment', 'authorizedByEmployee'],
       order: { entryTime: 'DESC' },
     });
   }
@@ -22,14 +22,41 @@ export class AccessAuditService {
   async findOne(id: string): Promise<AccessAudit> {
     const item = await this.repository.findOne({
       where: { id },
-      relations: ['resident', 'visitor', 'vehicle', 'apartment', 'authorizedByEmployee'],
+      relations: ['resident', 'visitor', 'vehicle', 'vehicleBrand', 'apartment', 'authorizedByEmployee'],
     });
     if (!item) throw new NotFoundException(`AccessAudit #${id} not found`);
     return item;
   }
 
   async create(dto: CreateAccessAuditDto): Promise<AccessAudit> {
-    const item = this.repository.create(dto);
+    const entryType = dto.entryType ?? 'pedestrian';
+    const needsVehicleData = entryType === 'car' || entryType === 'motorcycle';
+
+    if (!dto.visitorId && !dto.residentId) {
+      throw new BadRequestException('Debe indicar visitante o residente');
+    }
+
+    if (dto.visitorId && !dto.visitorPhotoPath) {
+      throw new BadRequestException('La foto del visitante es obligatoria');
+    }
+
+    if (needsVehicleData) {
+      if (!dto.vehicleBrandId || !dto.vehicleColor || !dto.vehicleModel || !dto.vehiclePlate) {
+        throw new BadRequestException(
+          'Para carro o moto debes registrar marca, color, placa y modelo',
+        );
+      }
+    }
+
+    const item = this.repository.create({
+      ...dto,
+      entryType,
+      vehicleBrandId: needsVehicleData ? dto.vehicleBrandId : null,
+      vehicleColor: needsVehicleData ? dto.vehicleColor?.trim() : null,
+      vehicleModel: needsVehicleData ? dto.vehicleModel?.trim() : null,
+      vehiclePlate: needsVehicleData ? dto.vehiclePlate?.trim().toUpperCase() : null,
+    });
+
     return this.repository.save(item);
   }
 
@@ -48,7 +75,7 @@ export class AccessAuditService {
   async findByApartment(apartmentId: string): Promise<AccessAudit[]> {
     return this.repository.find({
       where: { apartmentId },
-      relations: ['resident', 'visitor', 'vehicle', 'apartment', 'authorizedByEmployee'],
+      relations: ['resident', 'visitor', 'vehicle', 'vehicleBrand', 'apartment', 'authorizedByEmployee'],
       order: { entryTime: 'DESC' },
     });
   }

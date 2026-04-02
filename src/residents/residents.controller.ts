@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
-import { EmployeeGuard } from '../common/guards/employee.guard';
+import { OperationsEmployeeGuard } from '../common/guards/operations-employee.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { ResidentsService } from './residents.service';
@@ -14,7 +14,7 @@ export class ResidentsController {
   constructor(private readonly service: ResidentsService) {}
 
   @Get()
-  @UseGuards(EmployeeGuard)
+  @UseGuards(OperationsEmployeeGuard)
   findAll(@Query('apartmentId') apartmentId?: string) {
     return this.service.findAll(apartmentId);
   }
@@ -36,7 +36,7 @@ export class ResidentsController {
   }
 
   @Get(':id')
-  @UseGuards(EmployeeGuard)
+  @UseGuards(OperationsEmployeeGuard)
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
   }

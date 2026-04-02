@@ -200,6 +200,9 @@ export class AuthService {
           'package:manage',
           'access-audit:manage',
           'pool-entry:manage',
+          'vehicle-brand:manage',
+          'fine-type:manage',
+          'fine:manage',
         ];
       case 'porter':
         return [
@@ -207,12 +210,16 @@ export class AuthService {
           'visitor:manage',
           'access-audit:manage',
           'package:manage',
+          'fine:create',
+          'fine:read',
         ];
       case 'pool_attendant':
         return [
           ...common,
           'pool-entry:manage',
           'resident:read',
+          'fine:create',
+          'fine:read',
         ];
       default:
         return common;

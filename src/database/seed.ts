@@ -69,6 +69,27 @@ async function seed() {
   const [poolAtt] = await q(`SELECT id FROM employees WHERE username = 'pool1'`);
   console.log(`   ✓ admin (${admin.id}), porter1, pool1`);
 
+  // ─── Vehicle brands & fine types ───────────────────────────────
+  console.log('🏷️ Creando marcas de vehículo y tipos de multa...');
+  await q(`
+    INSERT INTO vehicle_brands (id, name)
+    VALUES
+      (uuidv7(), 'Chevrolet'),
+      (uuidv7(), 'Renault'),
+      (uuidv7(), 'Yamaha'),
+      (uuidv7(), 'Honda')
+    ON CONFLICT (name) DO NOTHING
+  `);
+  await q(`
+    INSERT INTO fine_types (id, name, value, created_by_employee_id)
+    VALUES
+      (uuidv7(), 'Parqueo en zona prohibida', 120000, $1),
+      (uuidv7(), 'Ruido en horario no permitido', 90000, $1),
+      (uuidv7(), 'Mal uso de zonas comunes', 150000, $1)
+    ON CONFLICT (name) DO NOTHING
+  `, [admin.id]);
+  console.log(`   ✓ 4 marcas de vehículo + 3 tipos de multa`);
+
   // ─── Towers ──────────────────────────────────────────────────────
   console.log('🗼 Creando torres...');
   await q(`
@@ -162,6 +183,18 @@ async function seed() {
   const [miguel]  = await q(`SELECT id FROM residents WHERE document = '20004004'`);
   const [daniela] = await q(`SELECT id FROM residents WHERE document = '20005005'`);
   console.log(`   ✓ ana.garcia, juan.perez, sofia.herrera, miguel.lopez, daniela.c`);
+
+  // ─── Fines ──────────────────────────────────────────────────────
+  console.log('💸 Creando multas de ejemplo...');
+  const [fineTypeParking] = await q(`SELECT id, value FROM fine_types WHERE name = 'Parqueo en zona prohibida'`);
+  const [fineTypeNoise] = await q(`SELECT id, value FROM fine_types WHERE name = 'Ruido en horario no permitido'`);
+  await q(`
+    INSERT INTO fines (id, resident_id, fine_type_id, amount, notes, created_by_employee_id)
+    VALUES
+      (uuidv7(), $1, $3, $4, 'Vehículo bloqueando acceso peatonal', $5),
+      (uuidv7(), $2, $6, $7, 'Música alta después de las 11:00 p.m.', $8)
+  `, [ana.id, juan.id, fineTypeParking.id, fineTypeParking.value, porter.id, fineTypeNoise.id, fineTypeNoise.value, poolAtt.id]);
+  console.log(`   ✓ 2 multas registradas`);
 
   // ─── Resident-Apartment links ────────────────────────────────────
   console.log('🔗 Vinculando residentes con apartamentos...');

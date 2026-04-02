@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { ApartmentStatusesModule } from './apartment-statuses/apartment-statuses.module';
 import { ResidentTypesModule } from './resident-types/resident-types.module';
 import { VehicleTypesModule } from './vehicle-types/vehicle-types.module';
+import { VehicleBrandsModule } from './vehicle-brands/vehicle-brands.module';
 import { EmployeeRolesModule } from './employee-roles/employee-roles.module';
 import { ReservationStatusesModule } from './reservation-statuses/reservation-statuses.module';
 import { NotificationTypesModule } from './notification-types/notification-types.module';
@@ -29,6 +30,7 @@ import { NewsModule } from './news/news.module';
 import { CommunitySpacesModule } from './community-spaces/community-spaces.module';
 import { CallsModule } from './calls/calls.module';
 import { AssembliesModule } from './assemblies/assemblies.module';
+import { FinesModule } from './fines/fines.module';
 import { Assembly } from './assemblies/entities/assembly.entity';
 import { AssemblyQuestion } from './assemblies/entities/assembly-question.entity';
 import { AssemblyVote } from './assemblies/entities/assembly-vote.entity';
@@ -37,6 +39,7 @@ import { AssemblyResidentToken } from './assemblies/entities/assembly-resident-t
 import { ApartmentStatus } from './apartment-statuses/entities/apartment-status.entity';
 import { ResidentType } from './resident-types/entities/resident-type.entity';
 import { VehicleType } from './vehicle-types/entities/vehicle-type.entity';
+import { VehicleBrand } from './vehicle-brands/entities/vehicle-brand.entity';
 import { EmployeeRole } from './employee-roles/entities/employee-role.entity';
 import { ReservationStatus } from './reservation-statuses/entities/reservation-status.entity';
 import { NotificationType } from './notification-types/entities/notification-type.entity';
@@ -64,6 +67,8 @@ import { CommunitySpaceSchedule } from './community-spaces/entities/community-sp
 import { CallDevice } from './calls/entities/call-device.entity';
 import { CallSession } from './calls/entities/call-session.entity';
 import { CallTraceEvent } from './calls/entities/call-trace-event.entity';
+import { FineType } from './fines/entities/fine-type.entity';
+import { Fine } from './fines/entities/fine.entity';
 
 @Module({
   imports: [
@@ -79,11 +84,12 @@ import { CallTraceEvent } from './calls/entities/call-trace-event.entity';
         password: config.get<string>('DATABASE_PASSWORD', 'conjunto'),
         database: config.get<string>('DATABASE_NAME', 'conjunto'),
         entities: [
-          ApartmentStatus, ResidentType, VehicleType, EmployeeRole,
+          ApartmentStatus, ResidentType, VehicleType, VehicleBrand, EmployeeRole,
           ReservationStatus, NotificationType, Tower, Apartment, Resident,
           Employee, Visitor, Vehicle, ResidentApartment, AccessAudit,
           PoolEntry, PoolEntryGuest, PoolEntryResident, CommonArea, Reservation, Package, PackagePhoto, Notification, SystemLog,
           NewsCategory, News, CommunitySpace, CommunitySpaceSchedule, CallDevice, CallSession, CallTraceEvent,
+          FineType, Fine,
           Assembly, AssemblyQuestion, AssemblyVote, AssemblyResidentToken,
         ],
         synchronize: true,
@@ -96,6 +102,7 @@ import { CallTraceEvent } from './calls/entities/call-trace-event.entity';
     ApartmentStatusesModule,
     ResidentTypesModule,
     VehicleTypesModule,
+    VehicleBrandsModule,
     EmployeeRolesModule,
     ReservationStatusesModule,
     NotificationTypesModule,
@@ -117,6 +124,7 @@ import { CallTraceEvent } from './calls/entities/call-trace-event.entity';
     NewsModule,
     CommunitySpacesModule,
     CallsModule,
+    FinesModule,
     AssembliesModule,
   ],
 })
