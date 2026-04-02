@@ -63,6 +63,7 @@ import { CommunitySpace } from './community-spaces/entities/community-space.enti
 import { CommunitySpaceSchedule } from './community-spaces/entities/community-space-schedule.entity';
 import { CallDevice } from './calls/entities/call-device.entity';
 import { CallSession } from './calls/entities/call-session.entity';
+import { CallTraceEvent } from './calls/entities/call-trace-event.entity';
 
 @Module({
   imports: [
@@ -82,7 +83,7 @@ import { CallSession } from './calls/entities/call-session.entity';
           ReservationStatus, NotificationType, Tower, Apartment, Resident,
           Employee, Visitor, Vehicle, ResidentApartment, AccessAudit,
           PoolEntry, PoolEntryGuest, PoolEntryResident, CommonArea, Reservation, Package, PackagePhoto, Notification, SystemLog,
-          NewsCategory, News, CommunitySpace, CommunitySpaceSchedule, CallDevice, CallSession,
+          NewsCategory, News, CommunitySpace, CommunitySpaceSchedule, CallDevice, CallSession, CallTraceEvent,
           Assembly, AssemblyQuestion, AssemblyVote, AssemblyResidentToken,
         ],
         synchronize: true,

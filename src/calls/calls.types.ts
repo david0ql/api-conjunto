@@ -41,6 +41,18 @@ export interface CallApartmentSummary {
   } | null;
 }
 
+export interface CallTimelineEventPayload {
+  id: string;
+  source: 'api' | 'web' | 'mobile';
+  level: 'info' | 'warn' | 'error';
+  stage: string;
+  message: string;
+  actorUserId: string | null;
+  actorUserType: JwtPayload['type'] | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
 export interface CallSessionPayload {
   id: string;
   status: CallSessionStatus;
@@ -65,6 +77,7 @@ export interface CallSessionPayload {
   createdAt: string;
   acceptedAt: string | null;
   endedAt: string | null;
+  timeline?: CallTimelineEventPayload[];
 }
 
 export interface CallSignalEnvelope {

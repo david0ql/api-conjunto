@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AdminOrPorterGuard } from '../common/guards/admin-or-porter.guard';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -48,6 +48,30 @@ class UnregisterCallDeviceDto {
   deviceId?: string | null;
 }
 
+class CreateCallTraceDto {
+  @IsString()
+  callId: string;
+
+  @IsIn(['web', 'mobile', 'api'])
+  source: 'web' | 'mobile' | 'api';
+
+  @IsString()
+  @MaxLength(80)
+  stage: string;
+
+  @IsString()
+  @MaxLength(240)
+  message: string;
+
+  @IsOptional()
+  @IsIn(['info', 'warn', 'error'])
+  level?: 'info' | 'warn' | 'error';
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown> | null;
+}
+
 @Controller('calls')
 @UseGuards(JwtAuthGuard)
 export class CallsController {
@@ -87,6 +111,15 @@ export class CallsController {
   @Post('devices/unregister')
   async unregisterDevice(@CurrentUser() user: JwtPayload, @Body() dto: UnregisterCallDeviceDto = {}) {
     await this.callsPushService.unregisterDevice(user, dto);
+    return { ok: true };
+  }
+
+  @Post('trace')
+  async createTrace(@CurrentUser() user: JwtPayload, @Body() dto: CreateCallTraceDto) {
+    if (!dto?.callId || !dto?.source || !dto?.stage || !dto?.message) {
+      throw new BadRequestException('callId, source, stage y message son requeridos');
+    }
+    await this.callsService.createTraceForUser(dto.callId, user, dto);
     return { ok: true };
   }
 }

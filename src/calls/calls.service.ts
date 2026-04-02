@@ -16,8 +16,10 @@ import type {
   CallApartmentSummary,
   CallPorterAvailabilityPayload,
   CallSessionPayload,
+  CallTimelineEventPayload,
   IceServerConfig,
 } from './calls.types';
+import { CallTraceEvent } from './entities/call-trace-event.entity';
 import { CallSession } from './entities/call-session.entity';
 
 @Injectable()
@@ -25,6 +27,8 @@ export class CallsService {
   constructor(
     @InjectRepository(CallSession)
     private readonly callSessionsRepository: Repository<CallSession>,
+    @InjectRepository(CallTraceEvent)
+    private readonly callTraceEventsRepository: Repository<CallTraceEvent>,
     @InjectRepository(Apartment)
     private readonly apartmentsRepository: Repository<Apartment>,
     @InjectRepository(Employee)
@@ -140,7 +144,94 @@ export class CallsService {
       order: { createdAt: 'DESC' },
     });
 
-    return calls.map((call) => this.toCallPayload(call));
+    const callIds = calls.map((call) => call.id);
+    const timelineByCallId = new Map<string, CallTimelineEventPayload[]>();
+    if (callIds.length > 0) {
+      const traceEvents = await this.callTraceEventsRepository.find({
+        where: { callSessionId: In(callIds) },
+        order: { createdAt: 'ASC' },
+      });
+      traceEvents.forEach((event) => {
+        const current = timelineByCallId.get(event.callSessionId) ?? [];
+        current.push(this.toTracePayload(event));
+        timelineByCallId.set(event.callSessionId, current);
+      });
+    }
+
+    return calls.map((call) => this.toCallPayload(call, timelineByCallId.get(call.id) ?? []));
+  }
+
+  async createTraceForUser(
+    callId: string,
+    user: JwtPayload,
+    input: {
+      source: 'web' | 'mobile' | 'api';
+      stage: string;
+      message: string;
+      level?: 'info' | 'warn' | 'error';
+      metadata?: Record<string, unknown> | null;
+    },
+  ) {
+    const call = await this.callSessionsRepository.findOne({ where: { id: callId } });
+    if (!call) {
+      throw new NotFoundException(`Call #${callId} not found`);
+    }
+
+    const isAllowed = user.type === 'employee'
+      ? call.initiatedByEmployeeId === user.sub ||
+        call.acceptedByEmployeeId === user.sub ||
+        (call.targetEmployeeIds ?? []).includes(user.sub)
+      : call.initiatedByResidentId === user.sub ||
+        call.acceptedByResidentId === user.sub ||
+        (call.targetResidentIds ?? []).includes(user.sub);
+
+    if (!isAllowed) {
+      throw new ForbiddenException('El usuario autenticado no participa en esta llamada');
+    }
+
+    await this.recordTrace(call.id, {
+      source: input.source,
+      stage: input.stage,
+      message: input.message,
+      level: input.level,
+      metadata: input.metadata,
+      actorUserId: user.sub,
+      actorUserType: user.type,
+    });
+  }
+
+  async recordTrace(
+    callId: string,
+    input: {
+      source: 'web' | 'mobile' | 'api';
+      stage: string;
+      message: string;
+      level?: 'info' | 'warn' | 'error';
+      metadata?: Record<string, unknown> | null;
+      actorUserId?: string | null;
+      actorUserType?: JwtPayload['type'] | null;
+    },
+  ) {
+    if (!callId || !input.stage?.trim() || !input.message?.trim()) {
+      return;
+    }
+
+    const exists = await this.callSessionsRepository.exist({ where: { id: callId } });
+    if (!exists) {
+      return;
+    }
+
+    const event = this.callTraceEventsRepository.create({
+      callSessionId: callId,
+      source: input.source,
+      stage: input.stage.trim().slice(0, 80),
+      message: input.message.trim().slice(0, 240),
+      level: input.level ?? 'info',
+      metadata: input.metadata ?? null,
+      actorUserId: input.actorUserId ?? null,
+      actorUserType: input.actorUserType ?? null,
+    });
+    await this.callTraceEventsRepository.save(event);
   }
 
   async createPorterCall(residentId: string, targetEmployeeId: string) {
@@ -640,7 +731,10 @@ export class CallsService {
     };
   }
 
-  private toCallPayload(call: CallSession): CallSessionPayload {
+  private toCallPayload(
+    call: CallSession,
+    timeline: CallTimelineEventPayload[] = [],
+  ): CallSessionPayload {
     return {
       id: call.id,
       status: call.status,
@@ -689,6 +783,21 @@ export class CallsService {
       createdAt: call.createdAt.toISOString(),
       acceptedAt: call.acceptedAt?.toISOString() ?? null,
       endedAt: call.endedAt?.toISOString() ?? null,
+      timeline,
+    };
+  }
+
+  private toTracePayload(event: CallTraceEvent): CallTimelineEventPayload {
+    return {
+      id: event.id,
+      source: event.source,
+      level: event.level,
+      stage: event.stage,
+      message: event.message,
+      actorUserId: event.actorUserId ?? null,
+      actorUserType: event.actorUserType ?? null,
+      metadata: event.metadata ?? null,
+      createdAt: event.createdAt.toISOString(),
     };
   }
 

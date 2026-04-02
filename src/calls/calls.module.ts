@@ -11,6 +11,7 @@ import { CallsPushService } from './calls-push.service';
 import { CallsService } from './calls.service';
 import { CallDevice } from './entities/call-device.entity';
 import { CallSession } from './entities/call-session.entity';
+import { CallTraceEvent } from './entities/call-trace-event.entity';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { CallSession } from './entities/call-session.entity';
     TypeOrmModule.forFeature([
       CallSession,
       CallDevice,
+      CallTraceEvent,
       Apartment,
       Employee,
       Resident,
