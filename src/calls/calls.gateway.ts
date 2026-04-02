@@ -53,7 +53,6 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.data.user = user;
       this.userBySocketId.set(client.id, user);
       this.registerSocket(user, client.id);
-      this.clearDisconnectCleanupForUser(user);
 
       client.join(this.userRoom(user));
       if (user.type === 'resident') {
@@ -483,9 +482,6 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async cleanupDisconnectedUserCalls(user: JwtPayload) {
     this.disconnectCleanupByUserKey.delete(this.userKey(user));
-    if (this.hasAnyActiveSocketForUser(user)) {
-      return;
-    }
 
     const endedCalls = await this.callsService.endOpenCallsForActor({
       id: user.sub,
