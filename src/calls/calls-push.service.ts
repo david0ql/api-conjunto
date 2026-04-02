@@ -33,6 +33,13 @@ export interface UnregisterCallDeviceInput {
 }
 
 type ResidentCallPushEvent = 'incoming' | 'accepted' | 'ended' | 'missed' | 'rejected';
+interface ResidentNotificationPushInput {
+  targetResidentIds: string[];
+  notificationId: string;
+  title: string;
+  body: string;
+  notificationTypeCode?: string | null;
+}
 
 @Injectable()
 export class CallsPushService {
@@ -120,6 +127,70 @@ export class CallsPushService {
     }
 
     await this.sendResidentFcm(call, event);
+  }
+
+  async sendResidentNotification(input: ResidentNotificationPushInput) {
+    if (!input.targetResidentIds.length) {
+      return;
+    }
+
+    const messaging = this.getMessagingClient();
+    if (!messaging) {
+      return;
+    }
+
+    const devices = await this.callDevicesRepository.find({
+      where: {
+        userType: 'resident',
+        userId: In(input.targetResidentIds),
+        platform: In(['android', 'ios']),
+        channel: 'fcm',
+        isActive: true,
+      },
+    });
+    if (devices.length === 0) {
+      return;
+    }
+
+    const message: MulticastMessage = {
+      tokens: devices.map((device) => device.token),
+      notification: {
+        title: input.title,
+        body: input.body,
+      },
+      data: {
+        kind: 'notification',
+        event: 'new_notification',
+        notificationId: input.notificationId,
+        notificationType: input.notificationTypeCode ?? '',
+        title: input.title,
+        body: input.body,
+        timestamp: new Date().toISOString(),
+      },
+      android: {
+        priority: 'high',
+        ttl: 1000 * 60 * 10,
+      },
+      apns: {
+        headers: {
+          'apns-priority': '10',
+          'apns-push-type': 'alert',
+          'apns-topic': this.configService.get<string>('APNS_BUNDLE_ID', 'com.nordikhat.conjunto'),
+        },
+        payload: {
+          aps: {
+            sound: 'default',
+          },
+        },
+      },
+    };
+
+    try {
+      const result = await messaging.sendEachForMulticast(message);
+      await this.handleFcmFailures(devices, result.responses.map((response) => response.error?.message ?? null));
+    } catch (error) {
+      this.logger.warn(`No fue posible enviar push FCM de notificación ${input.notificationId}: ${this.getErrorMessage(error)}`);
+    }
   }
 
   private async sendResidentFcm(call: CallSessionPayload, event: ResidentCallPushEvent) {
