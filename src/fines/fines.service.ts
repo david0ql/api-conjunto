@@ -7,6 +7,7 @@ import { CreateFineTypeDto } from './dto/create-fine-type.dto';
 import { UpdateFineTypeValueDto } from './dto/update-fine-type-value.dto';
 import { CreateFineDto } from './dto/create-fine.dto';
 import { UpdateFineDto } from './dto/update-fine.dto';
+import { Apartment } from '../apartments/entities/apartment.entity';
 
 @Injectable()
 export class FinesService {
@@ -15,6 +16,8 @@ export class FinesService {
     private readonly fineRepository: Repository<Fine>,
     @InjectRepository(FineType)
     private readonly fineTypeRepository: Repository<FineType>,
+    @InjectRepository(Apartment)
+    private readonly apartmentRepository: Repository<Apartment>,
   ) {}
 
   findFineTypes(): Promise<FineType[]> {
@@ -43,6 +46,8 @@ export class FinesService {
   findAll(): Promise<Fine[]> {
     return this.fineRepository.find({
       relations: [
+        'apartment',
+        'apartment.towerData',
         'resident',
         'resident.apartment',
         'resident.apartment.towerData',
@@ -57,6 +62,8 @@ export class FinesService {
     const item = await this.fineRepository.findOne({
       where: { id },
       relations: [
+        'apartment',
+        'apartment.towerData',
         'resident',
         'resident.apartment',
         'resident.apartment.towerData',
@@ -74,8 +81,13 @@ export class FinesService {
 
   async create(dto: CreateFineDto, employeeId: string): Promise<Fine> {
     const fineType = await this.findFineTypeById(dto.fineTypeId);
+    const apartment = await this.apartmentRepository.findOne({ where: { id: dto.apartmentId } });
+    if (!apartment) {
+      throw new NotFoundException(`Apartment #${dto.apartmentId} not found`);
+    }
     const item = this.fineRepository.create({
-      residentId: dto.residentId,
+      apartmentId: dto.apartmentId,
+      residentId: null,
       fineTypeId: dto.fineTypeId,
       amount: dto.amount ?? fineType.value,
       notes: dto.notes?.trim() || null,

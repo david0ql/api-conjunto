@@ -15,6 +15,11 @@ export class ApartmentsController {
     return this.service.findAll(towerId);
   }
 
+  @Get('stats')
+  getStats() {
+    return this.service.getStats();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);

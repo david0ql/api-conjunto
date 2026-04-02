@@ -31,6 +31,14 @@ export class ResidentsService {
     return qb.orderBy('r.createdAt', 'DESC').getMany();
   }
 
+  async getStats(): Promise<{ total: number; active: number }> {
+    const [total, active] = await Promise.all([
+      this.repository.count(),
+      this.repository.count({ where: { isActive: true } }),
+    ]);
+    return { total, active };
+  }
+
   async findOne(id: string): Promise<Resident> {
     const item = await this.repository
       .createQueryBuilder('r')

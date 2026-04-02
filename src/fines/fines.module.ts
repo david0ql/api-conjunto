@@ -5,9 +5,10 @@ import { FineType } from './entities/fine-type.entity';
 import { FinesService } from './fines.service';
 import { FinesController } from './fines.controller';
 import { FineTypesController } from './fine-types.controller';
+import { Apartment } from '../apartments/entities/apartment.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Fine, FineType])],
+  imports: [TypeOrmModule.forFeature([Fine, FineType, Apartment])],
   controllers: [FinesController, FineTypesController],
   providers: [FinesService],
   exports: [FinesService],

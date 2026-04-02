@@ -3,7 +3,7 @@ import { IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-va
 
 export class CreateFineDto {
   @IsUUID()
-  residentId: string;
+  apartmentId: string;
 
   @IsUUID()
   fineTypeId: string;

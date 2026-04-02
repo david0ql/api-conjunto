@@ -33,6 +33,17 @@ export class ApartmentsService {
     return this.attachResidentCounts(apartments);
   }
 
+  async getStats(): Promise<{ total: number; occupied: number }> {
+    const [total, occupiedRows] = await Promise.all([
+      this.repository.count(),
+      this.repository.query(
+        'SELECT COUNT(DISTINCT apartment_id)::int AS occupied FROM residents WHERE apartment_id IS NOT NULL',
+      ),
+    ]);
+    const occupied = Number(occupiedRows?.[0]?.occupied ?? 0);
+    return { total, occupied };
+  }
+
   async findOne(id: string): Promise<Apartment> {
     const item = await this.repository.findOne({ where: { id }, relations: ['towerData'] });
     if (!item) throw new NotFoundException(`Apartment #${id} not found`);

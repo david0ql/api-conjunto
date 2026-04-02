@@ -2,6 +2,7 @@ import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGenerat
 import { Resident } from '../../residents/entities/resident.entity';
 import { Employee } from '../../employees/entities/employee.entity';
 import { FineType } from './fine-type.entity';
+import { Apartment } from '../../apartments/entities/apartment.entity';
 
 const DecimalTransformer = {
   to(value: number | null | undefined) {
@@ -18,12 +19,19 @@ export class Fine {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'resident_id' })
-  residentId: string;
+  @Column({ name: 'resident_id', nullable: true })
+  residentId: string | null;
 
-  @ManyToOne(() => Resident, { nullable: false, eager: false })
+  @ManyToOne(() => Resident, { nullable: true, eager: false })
   @JoinColumn({ name: 'resident_id' })
-  resident: Resident;
+  resident: Resident | null;
+
+  @Column({ name: 'apartment_id', nullable: true })
+  apartmentId: string | null;
+
+  @ManyToOne(() => Apartment, { nullable: true, eager: false })
+  @JoinColumn({ name: 'apartment_id' })
+  apartment: Apartment | null;
 
   @Column({ name: 'fine_type_id' })
   fineTypeId: string;

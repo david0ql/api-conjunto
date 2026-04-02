@@ -189,11 +189,11 @@ async function seed() {
   const [fineTypeParking] = await q(`SELECT id, value FROM fine_types WHERE name = 'Parqueo en zona prohibida'`);
   const [fineTypeNoise] = await q(`SELECT id, value FROM fine_types WHERE name = 'Ruido en horario no permitido'`);
   await q(`
-    INSERT INTO fines (id, resident_id, fine_type_id, amount, notes, created_by_employee_id)
+    INSERT INTO fines (id, resident_id, apartment_id, fine_type_id, amount, notes, created_by_employee_id)
     VALUES
-      (uuidv7(), $1, $3, $4, 'Vehículo bloqueando acceso peatonal', $5),
-      (uuidv7(), $2, $6, $7, 'Música alta después de las 11:00 p.m.', $8)
-  `, [ana.id, juan.id, fineTypeParking.id, fineTypeParking.value, porter.id, fineTypeNoise.id, fineTypeNoise.value, poolAtt.id]);
+      (uuidv7(), $1, $3, $5, $6, 'Vehículo bloqueando acceso peatonal', $7),
+      (uuidv7(), $2, $4, $8, $9, 'Música alta después de las 11:00 p.m.', $10)
+  `, [ana.id, juan.id, apt101A.id, apt102A.id, fineTypeParking.id, fineTypeParking.value, porter.id, fineTypeNoise.id, fineTypeNoise.value, poolAtt.id]);
   console.log(`   ✓ 2 multas registradas`);
 
   // ─── Resident-Apartment links ────────────────────────────────────

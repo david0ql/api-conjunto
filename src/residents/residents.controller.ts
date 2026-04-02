@@ -19,6 +19,12 @@ export class ResidentsController {
     return this.service.findAll(apartmentId);
   }
 
+  @Get('stats')
+  @UseGuards(OperationsEmployeeGuard)
+  getStats() {
+    return this.service.getStats();
+  }
+
   @Get('me')
   getMe(@CurrentUser() user: JwtPayload) {
     return this.service.findOne(user.sub);
