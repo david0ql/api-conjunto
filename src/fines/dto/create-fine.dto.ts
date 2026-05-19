@@ -6,6 +6,10 @@ export class CreateFineDto {
   apartmentId: string;
 
   @IsUUID()
+  @IsOptional()
+  residentId?: string;
+
+  @IsUUID()
   fineTypeId: string;
 
   @Type(() => Number)

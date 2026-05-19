@@ -40,6 +40,19 @@ export class Fine {
   @JoinColumn({ name: 'fine_type_id' })
   fineType: FineType;
 
+  @Column({ name: 'fine_type_name_snapshot', length: 120, nullable: true })
+  fineTypeNameSnapshot: string | null;
+
+  @Column({
+    name: 'fine_type_value_snapshot',
+    type: 'numeric',
+    precision: 12,
+    scale: 2,
+    nullable: true,
+    transformer: DecimalTransformer,
+  })
+  fineTypeValueSnapshot: number | null;
+
   @Column({
     type: 'numeric',
     precision: 12,
@@ -57,6 +70,12 @@ export class Fine {
   @ManyToOne(() => Employee, { nullable: false, eager: false })
   @JoinColumn({ name: 'created_by_employee_id' })
   createdByEmployee: Employee;
+
+  @Column({ name: 'created_year', type: 'int', nullable: true })
+  createdYear: number | null;
+
+  @Column({ name: 'created_month', type: 'int', nullable: true })
+  createdMonth: number | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

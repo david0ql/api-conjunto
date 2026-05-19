@@ -6,12 +6,13 @@ import { FinesService } from './fines.service';
 import { FinesController } from './fines.controller';
 import { FineTypesController } from './fine-types.controller';
 import { Apartment } from '../apartments/entities/apartment.entity';
+import { Resident } from '../residents/entities/resident.entity';
 import { NotificationType } from '../notification-types/entities/notification-type.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Fine, FineType, Apartment, NotificationType]),
+    TypeOrmModule.forFeature([Fine, FineType, Apartment, Resident, NotificationType]),
     NotificationsModule,
   ],
   controllers: [FinesController, FineTypesController],
