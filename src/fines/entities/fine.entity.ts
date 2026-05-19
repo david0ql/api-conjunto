@@ -40,7 +40,7 @@ export class Fine {
   @JoinColumn({ name: 'fine_type_id' })
   fineType: FineType;
 
-  @Column({ name: 'fine_type_name_snapshot', length: 120, nullable: true })
+  @Column({ name: 'fine_type_name_snapshot', type: 'varchar', length: 120, nullable: true })
   fineTypeNameSnapshot: string | null;
 
   @Column({
