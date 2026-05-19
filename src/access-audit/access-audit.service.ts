@@ -36,10 +36,6 @@ export class AccessAuditService {
       throw new BadRequestException('Debe indicar visitante o residente');
     }
 
-    if (dto.visitorId && !dto.visitorPhotoPath) {
-      throw new BadRequestException('La foto del visitante es obligatoria');
-    }
-
     if (needsVehicleData) {
       if (!dto.vehicleBrandId || !dto.vehicleColor || !dto.vehicleModel || !dto.vehiclePlate) {
         throw new BadRequestException(
