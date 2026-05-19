@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { AccessAudit } from './entities/access-audit.entity';
 import { CreateAccessAuditDto } from './dto/create-access-audit.dto';
 import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
@@ -36,11 +36,6 @@ export class AccessAuditService {
       throw new BadRequestException('Debe indicar visitante o residente');
     }
 
-    const openDuplicate = await this.findOpenDuplicate(dto);
-    if (openDuplicate) {
-      throw new BadRequestException('Ya existe un ingreso abierto para esta persona en este apartamento');
-    }
-
     if (needsVehicleData) {
       if (!dto.vehicleBrandId || !dto.vehicleColor || !dto.vehicleModel || !dto.vehiclePlate) {
         throw new BadRequestException(
@@ -59,32 +54,6 @@ export class AccessAuditService {
     });
 
     return this.repository.save(item);
-  }
-
-  private findOpenDuplicate(dto: CreateAccessAuditDto): Promise<AccessAudit | null> {
-    if (!dto.apartmentId) return Promise.resolve(null);
-
-    if (dto.visitorId) {
-      return this.repository.findOne({
-        where: {
-          visitorId: dto.visitorId,
-          apartmentId: dto.apartmentId,
-          exitTime: IsNull(),
-        },
-      });
-    }
-
-    if (dto.residentId) {
-      return this.repository.findOne({
-        where: {
-          residentId: dto.residentId,
-          apartmentId: dto.apartmentId,
-          exitTime: IsNull(),
-        },
-      });
-    }
-
-    return Promise.resolve(null);
   }
 
   async update(id: string, dto: UpdateAccessAuditDto): Promise<AccessAudit> {
