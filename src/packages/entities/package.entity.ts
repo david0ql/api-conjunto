@@ -43,6 +43,16 @@ export class Package {
   receivedByResidentId: string;
 
   @ManyToOne(() => Employee, { nullable: true, eager: false })
+  @JoinColumn({ name: 'delivered_by_employee_id' })
+  deliveredByEmployee: Employee;
+
+  @Column({ name: 'delivered_by_employee_id', nullable: true })
+  deliveredByEmployeeId: string;
+
+  @Column({ name: 'delivery_photo_path', type: 'text', nullable: true })
+  deliveryPhotoPath: string;
+
+  @ManyToOne(() => Employee, { nullable: true, eager: false })
   @JoinColumn({ name: 'created_by_employee_id' })
   createdByEmployee: Employee;
 

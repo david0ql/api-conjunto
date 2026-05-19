@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Package } from './entities/package.entity';
@@ -23,6 +23,7 @@ export class PackagesService {
       .leftJoinAndSelect('pkg.resident', 'resident')
       .leftJoinAndSelect('pkg.createdByEmployee', 'createdByEmployee')
       .leftJoinAndSelect('pkg.receivedByResident', 'receivedByResident')
+      .leftJoinAndSelect('pkg.deliveredByEmployee', 'deliveredByEmployee')
       .loadRelationCountAndMap('pkg.photoCount', 'pkg.photos')
       .orderBy('pkg.arrivalTime', 'DESC')
       .getMany();
@@ -31,7 +32,7 @@ export class PackagesService {
   async findOne(id: string): Promise<Package> {
     const item = await this.repository.findOne({
       where: { id },
-      relations: ['apartment', 'apartment.towerData', 'resident', 'createdByEmployee', 'receivedByResident'],
+      relations: ['apartment', 'apartment.towerData', 'resident', 'createdByEmployee', 'receivedByResident', 'deliveredByEmployee'],
     });
     if (!item) throw new NotFoundException(`Package #${id} not found`);
     return item;
@@ -43,6 +44,8 @@ export class PackagesService {
       .leftJoinAndSelect('pkg.apartment', 'apartment')
       .leftJoinAndSelect('apartment.towerData', 'towerData')
       .leftJoinAndSelect('pkg.createdByEmployee', 'createdByEmployee')
+      .leftJoinAndSelect('pkg.receivedByResident', 'receivedByResident')
+      .leftJoinAndSelect('pkg.deliveredByEmployee', 'deliveredByEmployee')
       .where('pkg.resident_id = :residentId', { residentId })
       .loadRelationCountAndMap('pkg.photoCount', 'pkg.photos')
       .orderBy('pkg.arrivalTime', 'DESC')
@@ -68,14 +71,21 @@ export class PackagesService {
     return this.repository.save(item);
   }
 
-  async markDelivered(id: string, dto: UpdatePackageDto): Promise<Package> {
+  async markDelivered(id: string, dto: UpdatePackageDto, deliveredByEmployeeId: string, deliveryPhotoPath?: string): Promise<Package> {
+    if (!deliveryPhotoPath) {
+      throw new BadRequestException('La foto de entrega es obligatoria');
+    }
+
     const item = await this.findOne(id);
     item.delivered = true;
     item.deliveredTime = new Date();
+    item.deliveredByEmployeeId = deliveredByEmployeeId;
+    item.deliveryPhotoPath = deliveryPhotoPath;
     if (dto.receivedByResidentId) {
       item.receivedByResidentId = dto.receivedByResidentId;
     }
-    return this.repository.save(item);
+    await this.repository.save(item);
+    return this.findOne(item.id);
   }
 
   async remove(id: string): Promise<void> {

@@ -92,8 +92,36 @@ export class PackagesController {
 
   @Patch(':id/deliver')
   @UseGuards(EmployeeGuard)
-  markDelivered(@Param('id') id: string, @Body() dto: UpdatePackageDto) {
-    return this.service.markDelivered(id, dto);
+  @UseInterceptors(
+    FileInterceptor('deliveryPhoto', {
+      storage: diskStorage({
+        destination: UPLOAD_DIR,
+        filename: (_req, file, cb) => {
+          const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          cb(null, `${unique}${extname(file.originalname)}`);
+        },
+      }),
+      fileFilter: (_req, file, cb) => {
+        if (!file.mimetype.startsWith('image/')) {
+          return cb(new Error('Solo se permiten imágenes'), false);
+        }
+        cb(null, true);
+      },
+      limits: { fileSize: 15 * 1024 * 1024 },
+    }),
+  )
+  markDelivered(
+    @Param('id') id: string,
+    @Body() dto: UpdatePackageDto,
+    @CurrentUser() user: JwtPayload,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.service.markDelivered(
+      id,
+      dto,
+      user.sub,
+      file ? `${UPLOAD_DIR}/${file.filename}` : undefined,
+    );
   }
 
   @Delete(':id')
