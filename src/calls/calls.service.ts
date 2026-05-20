@@ -21,6 +21,8 @@ import type {
 } from './calls.types';
 import { CallTraceEvent } from './entities/call-trace-event.entity';
 import { CallSession } from './entities/call-session.entity';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class CallsService {
@@ -131,8 +133,10 @@ export class CallsService {
     });
   }
 
-  async getCallHistory(): Promise<CallSessionPayload[]> {
-    const calls = await this.callSessionsRepository.find({
+  async getCallHistory(query: PaginationQueryDto = {}): Promise<PaginatedResponse<CallSessionPayload>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [calls, total] = await this.callSessionsRepository.findAndCount({
       relations: [
         'apartment',
         'apartment.towerData',
@@ -142,6 +146,8 @@ export class CallsService {
         'acceptedByEmployee',
       ],
       order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
 
     const callIds = calls.map((call) => call.id);
@@ -158,7 +164,8 @@ export class CallsService {
       });
     }
 
-    return calls.map((call) => this.toCallPayload(call, timelineByCallId.get(call.id) ?? []));
+    const data = calls.map((call) => this.toCallPayload(call, timelineByCallId.get(call.id) ?? []));
+    return paginate(data, total, page, limit);
   }
 
   async createTraceForUser(

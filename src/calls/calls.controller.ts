@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AdminOrPorterGuard } from '../common/guards/admin-or-porter.guard';
@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { CallsPushService } from './calls-push.service';
 import { CallsService } from './calls.service';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 class RegisterCallDeviceDto {
   @IsString()
@@ -87,8 +88,8 @@ export class CallsController {
 
   @Get('history')
   @UseGuards(AdminOrPorterGuard)
-  getHistory() {
-    return this.callsService.getCallHistory();
+  getHistory(@Query() pagination: PaginationQueryDto) {
+    return this.callsService.getCallHistory(pagination);
   }
 
   @Get('ice-config')

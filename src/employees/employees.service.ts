@@ -5,6 +5,8 @@ import * as bcrypt from 'bcrypt';
 import { Employee } from './entities/employee.entity';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class EmployeesService {
@@ -13,8 +15,16 @@ export class EmployeesService {
     private repository: Repository<Employee>,
   ) {}
 
-  async findAll(): Promise<Employee[]> {
-    return this.repository.find({ relations: ['role'], order: { createdAt: 'DESC' } });
+  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<Employee>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [data, total] = await this.repository.findAndCount({
+      relations: ['role'],
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    return paginate(data, total, page, limit);
   }
 
   async findOne(id: string): Promise<Employee> {

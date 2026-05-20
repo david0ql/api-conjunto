@@ -6,7 +6,7 @@ import { Apartment } from '../../apartments/entities/apartment.entity';
 import { Employee } from '../../employees/entities/employee.entity';
 import { VehicleBrand } from '../../vehicle-brands/entities/vehicle-brand.entity';
 
-export const ACCESS_ENTRY_TYPES = ['pedestrian', 'car', 'motorcycle', 'other'] as const;
+export const ACCESS_ENTRY_TYPES = ['pedestrian', 'car', 'motorcycle', 'taxi', 'other'] as const;
 export type AccessEntryType = (typeof ACCESS_ENTRY_TYPES)[number];
 
 @Entity('access_audit')

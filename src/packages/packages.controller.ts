@@ -10,6 +10,7 @@ import {
   UseInterceptors,
   UploadedFile,
   UploadedFiles,
+  Query,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -25,6 +26,7 @@ import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PackagesService } from './packages.service';
 import { CreatePackageDto } from './dto/create-package.dto';
 import { UpdatePackageDto } from './dto/update-package.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 const UPLOAD_DIR = 'uploads/packages';
 
@@ -37,14 +39,14 @@ export class PackagesController {
 
   @Get()
   @UseGuards(EmployeeGuard)
-  findAll() {
-    return this.service.findAll();
+  findAll(@Query() pagination: PaginationQueryDto) {
+    return this.service.findAll(pagination);
   }
 
   @Get('my')
   @UseGuards(ResidentGuard)
-  findMy(@CurrentUser() user: JwtPayload) {
-    return this.service.findByResident(user.sub);
+  findMy(@CurrentUser() user: JwtPayload, @Query() pagination: PaginationQueryDto) {
+    return this.service.findByResident(user.sub, pagination);
   }
 
   @Get(':id')

@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { News } from './entities/news.entity';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class NewsService {
@@ -12,13 +14,18 @@ export class NewsService {
     private repository: Repository<News>,
   ) {}
 
-  findAll(): Promise<News[]> {
-    return this.repository
+  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<News>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [data, total] = await this.repository
       .createQueryBuilder('news')
       .leftJoinAndSelect('news.category', 'category')
       .leftJoinAndSelect('news.createdByEmployee', 'createdByEmployee')
       .orderBy('news.publishedAt', 'DESC')
-      .getMany();
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+    return paginate(data, total, page, limit);
   }
 
   async findOne(id: string): Promise<News> {

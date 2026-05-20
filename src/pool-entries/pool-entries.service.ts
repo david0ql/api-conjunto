@@ -9,6 +9,8 @@ import { CreatePoolEntryDto } from './dto/create-pool-entry.dto';
 import { UpdatePoolEntryDto } from './dto/update-pool-entry.dto';
 import { Apartment } from '../apartments/entities/apartment.entity';
 import { Resident } from '../residents/entities/resident.entity';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 type PoolReportFilters = {
   dateFrom?: string;
@@ -33,12 +35,17 @@ export class PoolEntriesService {
     private residentsRepository: Repository<Resident>,
   ) {}
 
-  async findAll(): Promise<PoolEntry[]> {
-    const entries = await this.repository.find({
+  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<PoolEntry>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [entries, total] = await this.repository.findAndCount({
       relations: ['apartment', 'residentLinks', 'residentLinks.resident', 'createdByEmployee', 'guests'],
       order: { entryTime: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
-    return entries.map((entry) => this.attachResidents(entry));
+    const data = entries.map((entry) => this.attachResidents(entry));
+    return paginate(data, total, page, limit);
   }
 
   async findOne(id: string): Promise<PoolEntry> {

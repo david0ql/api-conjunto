@@ -8,6 +8,8 @@ import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
 import { Resident } from '../residents/entities/resident.entity';
 import { CallsPushService } from '../calls/calls-push.service';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class NotificationsService {
@@ -21,8 +23,16 @@ export class NotificationsService {
     private readonly callsPushService: CallsPushService,
   ) {}
 
-  async findAll(): Promise<Notification[]> {
-    return this.repository.find({ relations: ['apartment', 'apartment.towerData', 'resident', 'notificationType'] });
+  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<Notification>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [data, total] = await this.repository.findAndCount({
+      relations: ['apartment', 'apartment.towerData', 'resident', 'notificationType'],
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    return paginate(data, total, page, limit);
   }
 
   async findOne(id: string): Promise<Notification> {

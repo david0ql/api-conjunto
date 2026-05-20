@@ -5,6 +5,8 @@ import { CommonArea } from './entities/common-area.entity';
 import { CreateCommonAreaDto } from './dto/create-common-area.dto';
 import { UpdateCommonAreaDto } from './dto/update-common-area.dto';
 import { Reservation } from '../reservations/entities/reservation.entity';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class CommonAreasService {
@@ -15,8 +17,15 @@ export class CommonAreasService {
     private reservationsRepository: Repository<Reservation>,
   ) {}
 
-  async findAll(): Promise<CommonArea[]> {
-    return this.repository.find({ order: { createdAt: 'DESC' } });
+  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<CommonArea>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [data, total] = await this.repository.findAndCount({
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    return paginate(data, total, page, limit);
   }
 
   async findOne(id: string): Promise<CommonArea> {

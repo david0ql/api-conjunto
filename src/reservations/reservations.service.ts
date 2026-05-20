@@ -6,6 +6,8 @@ import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { ReservationStatus } from '../reservation-statuses/entities/reservation-status.entity';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class ReservationsService {
@@ -18,8 +20,16 @@ export class ReservationsService {
     private reservationStatusesRepository: Repository<ReservationStatus>,
   ) {}
 
-  async findAll(): Promise<Reservation[]> {
-    return this.repository.find({ relations: ['resident', 'area', 'status'] });
+  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<Reservation>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [data, total] = await this.repository.findAndCount({
+      relations: ['resident', 'area', 'status'],
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    return paginate(data, total, page, limit);
   }
 
   async findOne(id: string): Promise<Reservation> {

@@ -4,6 +4,7 @@ import { AdminGuard } from '../common/guards/admin.guard';
 import { ApartmentsService } from './apartments.service';
 import { CreateApartmentDto } from './dto/create-apartment.dto';
 import { UpdateApartmentDto } from './dto/update-apartment.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('apartments')
@@ -11,8 +12,8 @@ export class ApartmentsController {
   constructor(private readonly service: ApartmentsService) {}
 
   @Get()
-  findAll(@Query('towerId') towerId?: string) {
-    return this.service.findAll(towerId);
+  findAll(@Query('towerId') towerId?: string, @Query() pagination: PaginationQueryDto = {}) {
+    return this.service.findAll(towerId, pagination);
   }
 
   @Get('stats')

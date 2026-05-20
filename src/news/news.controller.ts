@@ -9,6 +9,7 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  Query,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -21,6 +22,7 @@ import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { NewsService } from './news.service';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 const UPLOAD_DIR = 'uploads/news';
 mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -31,8 +33,8 @@ export class NewsController {
   constructor(private readonly service: NewsService) {}
 
   @Get()
-  findAll() {
-    return this.service.findAll();
+  findAll(@Query() pagination: PaginationQueryDto) {
+    return this.service.findAll(pagination);
   }
 
   @Get(':id')

@@ -22,6 +22,8 @@ import type {
   VoteStatsPayload,
   VoteSyncResult,
 } from './types/assembly.types';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class AssembliesService {
@@ -62,12 +64,16 @@ export class AssembliesService {
     return this.buildPayload(saved.id);
   }
 
-  async findAll(): Promise<AssemblyPayload[]> {
-    const assemblies = await this.assembliesRepository.find({
+  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<AssemblyPayload>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [assemblies, total] = await this.assembliesRepository.findAndCount({
       order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
-
-    return Promise.all(assemblies.map((a) => this.buildPayload(a.id)));
+    const data = await Promise.all(assemblies.map((a) => this.buildPayload(a.id)));
+    return paginate(data, total, page, limit);
   }
 
   async findOne(id: string): Promise<AssemblyPayload> {

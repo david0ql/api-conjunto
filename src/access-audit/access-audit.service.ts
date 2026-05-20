@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { AccessAudit } from './entities/access-audit.entity';
 import { CreateAccessAuditDto } from './dto/create-access-audit.dto';
 import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class AccessAuditService {
@@ -12,11 +14,16 @@ export class AccessAuditService {
     private repository: Repository<AccessAudit>,
   ) {}
 
-  async findAll(): Promise<AccessAudit[]> {
-    return this.repository.find({
+  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<AccessAudit>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [data, total] = await this.repository.findAndCount({
       relations: ['resident', 'visitor', 'vehicle', 'vehicleBrand', 'apartment', 'authorizedByEmployee'],
       order: { entryTime: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
+    return paginate(data, total, page, limit);
   }
 
   async findOne(id: string): Promise<AccessAudit> {

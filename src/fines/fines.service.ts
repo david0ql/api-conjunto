@@ -12,6 +12,8 @@ import { Apartment } from '../apartments/entities/apartment.entity';
 import { Resident } from '../residents/entities/resident.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notification-types/entities/notification-type.entity';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 type PdfDocument = InstanceType<typeof PDFDocument>;
 
@@ -66,7 +68,17 @@ export class FinesService {
     return this.fineTypeRepository.save(item);
   }
 
-  findAll(filters: FineFilters = {}): Promise<Fine[]> {
+  async findAll(filters: FineFilters = {}, query: PaginationQueryDto = {}): Promise<PaginatedResponse<Fine>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [data, total] = await this.buildFineQuery(filters)
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+    return paginate(data, total, page, limit);
+  }
+
+  findAllUnpaginated(filters: FineFilters = {}): Promise<Fine[]> {
     return this.buildFineQuery(filters).getMany();
   }
 
@@ -157,7 +169,7 @@ export class FinesService {
   }
 
   async buildPdfReport(filters: FineFilters) {
-    const fines = await this.findAll(filters);
+    const fines = await this.findAllUnpaginated(filters);
     const doc = new PDFDocument({ margin: 34, size: 'A4', layout: 'landscape' });
     const chunks: Buffer[] = [];
     const rangeLabel = `${filters.dateFrom ?? 'Inicio'} a ${filters.dateTo ?? 'Hoy'}`;

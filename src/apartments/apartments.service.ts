@@ -5,6 +5,8 @@ import { Apartment } from './entities/apartment.entity';
 import { CreateApartmentDto } from './dto/create-apartment.dto';
 import { UpdateApartmentDto } from './dto/update-apartment.dto';
 import { Tower } from '../towers/entities/tower.entity';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class ApartmentsService {
@@ -24,13 +26,18 @@ export class ApartmentsService {
     return apartments.map((apt) => ({ ...apt, residentCount: countMap.get(apt.id) ?? 0 }));
   }
 
-  async findAll(towerId?: string): Promise<Apartment[]> {
-    const apartments = await this.repository.find({
+  async findAll(towerId?: string, query: PaginationQueryDto = {}): Promise<PaginatedResponse<Apartment>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [apartments, total] = await this.repository.findAndCount({
       where: towerId ? { towerId } : undefined,
       relations: ['towerData'],
       order: { tower: 'ASC', number: 'ASC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
-    return this.attachResidentCounts(apartments);
+    const data = await this.attachResidentCounts(apartments);
+    return paginate(data, total, page, limit);
   }
 
   async getStats(): Promise<{ total: number; occupied: number }> {

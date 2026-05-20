@@ -7,6 +7,8 @@ import { Resident } from './entities/resident.entity';
 import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
 import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class ResidentsService {
@@ -17,7 +19,9 @@ export class ResidentsService {
     private residentApartmentsRepository: Repository<ResidentApartment>,
   ) {}
 
-  async findAll(apartmentId?: string): Promise<Resident[]> {
+  async findAll(apartmentId?: string, query: PaginationQueryDto = {}): Promise<PaginatedResponse<Resident>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
     const qb = this.repository
       .createQueryBuilder('r')
       .leftJoinAndSelect('r.residentType', 'residentType')
@@ -28,7 +32,12 @@ export class ResidentsService {
       qb.where('r.apartment_id = :apartmentId', { apartmentId });
     }
 
-    return qb.orderBy('r.createdAt', 'DESC').getMany();
+    const [data, total] = await qb
+      .orderBy('r.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+    return paginate(data, total, page, limit);
   }
 
   async getStats(): Promise<{ total: number; active: number }> {

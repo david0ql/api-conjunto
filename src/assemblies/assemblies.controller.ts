@@ -18,6 +18,7 @@ import { AssembliesGateway } from './assemblies.gateway';
 import { CreateAssemblyDto } from './dto/create-assembly.dto';
 import { SubmitVoteDto } from './dto/submit-vote.dto';
 import { SyncVotesDto } from './dto/sync-votes.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 @Controller('assemblies')
 export class AssembliesController {
@@ -94,8 +95,8 @@ export class AssembliesController {
 
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Get()
-  findAll() {
-    return this.assembliesService.findAll();
+  findAll(@Query() pagination: PaginationQueryDto) {
+    return this.assembliesService.findAll(pagination);
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)

@@ -26,6 +26,7 @@ import { CreateAccessAuditDto } from './dto/create-access-audit.dto';
 import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
 import { EmployeeOrResidentGuard } from '../common/guards/employee-or-resident.guard';
 import { ResidentsService } from '../residents/residents.service';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 const UPLOAD_DIR = 'uploads/visitor-access';
 mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -40,8 +41,8 @@ export class AccessAuditController {
 
   @Get()
   @UseGuards(EmployeeOrResidentGuard)
-  findAll() {
-    return this.service.findAll();
+  findAll(@Query() pagination: PaginationQueryDto) {
+    return this.service.findAll(pagination);
   }
 
   @Get('my')

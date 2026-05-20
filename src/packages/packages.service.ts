@@ -5,6 +5,8 @@ import { Package } from './entities/package.entity';
 import { PackagePhoto } from './entities/package-photo.entity';
 import { CreatePackageDto } from './dto/create-package.dto';
 import { UpdatePackageDto } from './dto/update-package.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
 @Injectable()
 export class PackagesService {
@@ -15,8 +17,10 @@ export class PackagesService {
     private photoRepository: Repository<PackagePhoto>,
   ) {}
 
-  async findAll(): Promise<Package[]> {
-    return this.repository
+  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<Package>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [data, total] = await this.repository
       .createQueryBuilder('pkg')
       .leftJoinAndSelect('pkg.apartment', 'apartment')
       .leftJoinAndSelect('apartment.towerData', 'towerData')
@@ -26,7 +30,10 @@ export class PackagesService {
       .leftJoinAndSelect('pkg.deliveredByEmployee', 'deliveredByEmployee')
       .loadRelationCountAndMap('pkg.photoCount', 'pkg.photos')
       .orderBy('pkg.arrivalTime', 'DESC')
-      .getMany();
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+    return paginate(data, total, page, limit);
   }
 
   async findOne(id: string): Promise<Package> {
@@ -38,8 +45,10 @@ export class PackagesService {
     return item;
   }
 
-  async findByResident(residentId: string): Promise<Package[]> {
-    return this.repository
+  async findByResident(residentId: string, query: PaginationQueryDto = {}): Promise<PaginatedResponse<Package>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 15;
+    const [data, total] = await this.repository
       .createQueryBuilder('pkg')
       .leftJoinAndSelect('pkg.apartment', 'apartment')
       .leftJoinAndSelect('apartment.towerData', 'towerData')
@@ -49,7 +58,10 @@ export class PackagesService {
       .where('pkg.resident_id = :residentId', { residentId })
       .loadRelationCountAndMap('pkg.photoCount', 'pkg.photos')
       .orderBy('pkg.arrivalTime', 'DESC')
-      .getMany();
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+    return paginate(data, total, page, limit);
   }
 
   async create(dto: CreatePackageDto, photoPaths: string[] = []): Promise<Package> {
