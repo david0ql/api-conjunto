@@ -1,4 +1,6 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+
+export const VEHICLE_TYPES = ['car', 'motorcycle', 'truck', 'bicycle', 'other'] as const;
 
 export class CreateResidentVehicleDto {
   @IsUUID()
@@ -8,6 +10,11 @@ export class CreateResidentVehicleDto {
   @IsUUID()
   @IsNotEmpty()
   vehicleBrandId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @IsIn(VEHICLE_TYPES)
+  vehicleType: string;
 
   @IsString()
   @IsNotEmpty()

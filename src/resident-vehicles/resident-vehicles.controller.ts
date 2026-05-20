@@ -31,6 +31,12 @@ export class ResidentVehiclesController {
     return this.service.findByApartment(apartmentId);
   }
 
+  @Get('by-plate/:plate')
+  @UseGuards(OperationsEmployeeGuard)
+  findByPlate(@Param('plate') plate: string) {
+    return this.service.findByPlate(plate);
+  }
+
   @Get(':id')
   @UseGuards(OperationsEmployeeGuard)
   findOne(@Param('id') id: string) {

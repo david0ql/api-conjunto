@@ -22,6 +22,9 @@ export class ResidentVehicle {
   @Column({ name: 'vehicle_brand_id', type: 'uuid' })
   vehicleBrandId: string;
 
+  @Column({ name: 'vehicle_type', type: 'varchar', length: 20, default: 'car' })
+  vehicleType: string;
+
   @Column({ type: 'varchar', length: 15 })
   plate: string;
 

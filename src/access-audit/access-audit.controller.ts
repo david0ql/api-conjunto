@@ -49,8 +49,9 @@ export class AccessAuditController {
     @Query('entryType') entryType?: string,
     @Query('entryTime') entryTime?: string,
     @Query('towerId') towerId?: string,
+    @Query('apartmentId') apartmentId?: string,
   ) {
-    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, type, entryType, entryTime, towerId });
+    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, type, entryType, entryTime, towerId, apartmentId });
   }
 
   @Get('my')

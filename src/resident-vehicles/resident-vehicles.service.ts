@@ -54,9 +54,18 @@ export class ResidentVehiclesService {
     return item;
   }
 
+  async findByPlate(plate: string): Promise<ResidentVehicle | null> {
+    const normalized = normalizePlate(plate);
+    return this.repository.findOne({
+      where: { plate: normalized },
+      relations: ['apartment', 'apartment.towerData', 'vehicleBrand'],
+    });
+  }
+
   async create(dto: CreateResidentVehicleDto, employeeId: string): Promise<ResidentVehicle> {
     const item = this.repository.create({
       ...dto,
+      vehicleType: dto.vehicleType ?? 'car',
       plate: normalizePlate(dto.plate),
       color: dto.color?.trim() || null,
       model: dto.model?.trim() || null,

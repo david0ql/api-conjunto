@@ -15,6 +15,7 @@ interface AccessFilters extends PaginationQueryDto {
   entryType?: string;
   entryTime?: string;
   towerId?: string;
+  apartmentId?: string;
 }
 
 @Injectable()
@@ -54,6 +55,9 @@ export class AccessAuditService {
     }
     if (query.towerId) {
       qb.andWhere('apartment.tower_id = :towerId', { towerId: query.towerId });
+    }
+    if (query.apartmentId) {
+      qb.andWhere('a.apartment_id = :apartmentId', { apartmentId: query.apartmentId });
     }
 
     const [data, total] = await qb.orderBy('a.entryTime', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
