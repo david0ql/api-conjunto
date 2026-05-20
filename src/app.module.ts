@@ -31,6 +31,8 @@ import { CommunitySpacesModule } from './community-spaces/community-spaces.modul
 import { CallsModule } from './calls/calls.module';
 import { AssembliesModule } from './assemblies/assemblies.module';
 import { FinesModule } from './fines/fines.module';
+import { ResidentVehiclesModule } from './resident-vehicles/resident-vehicles.module';
+import { ResidentVehicle } from './resident-vehicles/entities/resident-vehicle.entity';
 import { Assembly } from './assemblies/entities/assembly.entity';
 import { AssemblyQuestion } from './assemblies/entities/assembly-question.entity';
 import { AssemblyVote } from './assemblies/entities/assembly-vote.entity';
@@ -90,6 +92,7 @@ import { Fine } from './fines/entities/fine.entity';
           PoolEntry, PoolEntryGuest, PoolEntryResident, CommonArea, Reservation, Package, PackagePhoto, Notification, SystemLog,
           NewsCategory, News, CommunitySpace, CommunitySpaceSchedule, CallDevice, CallSession, CallTraceEvent,
           FineType, Fine,
+          ResidentVehicle,
           Assembly, AssemblyQuestion, AssemblyVote, AssemblyResidentToken,
         ],
         synchronize: true,
@@ -125,6 +128,7 @@ import { Fine } from './fines/entities/fine.entity';
     CommunitySpacesModule,
     CallsModule,
     FinesModule,
+    ResidentVehiclesModule,
     AssembliesModule,
   ],
 })
