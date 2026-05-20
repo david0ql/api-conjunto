@@ -68,6 +68,12 @@ export class AccessAuditController {
     return this.service.getStats();
   }
 
+  @Get('search-plate')
+  @UseGuards(EmployeeGuard)
+  searchByPlate(@Query('plate') plate?: string) {
+    return this.service.searchByPlate(plate?.trim() ?? '');
+  }
+
   @Get(':id')
   @UseGuards(EmployeeGuard)
   findOne(@Param('id') id: string) {

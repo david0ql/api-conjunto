@@ -65,7 +65,7 @@ export class ResidentVehiclesService {
   async create(dto: CreateResidentVehicleDto, employeeId: string): Promise<ResidentVehicle> {
     const item = this.repository.create({
       ...dto,
-      vehicleType: dto.vehicleType ?? 'car',
+      vehicleType: dto.vehicleType ?? 'motorcycle',
       plate: normalizePlate(dto.plate),
       color: dto.color?.trim() || null,
       model: dto.model?.trim() || null,

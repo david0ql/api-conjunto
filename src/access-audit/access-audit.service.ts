@@ -4,6 +4,8 @@ import { Between, Repository } from 'typeorm';
 import { AccessAudit } from './entities/access-audit.entity';
 import { CreateAccessAuditDto } from './dto/create-access-audit.dto';
 import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
+import { ResidentVehicle } from '../resident-vehicles/entities/resident-vehicle.entity';
+import { Resident } from '../residents/entities/resident.entity';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { periodToStartDate } from '../common/utils/period-filter';
@@ -18,11 +20,18 @@ interface AccessFilters extends PaginationQueryDto {
   apartmentId?: string;
 }
 
+type PlateSearchResult =
+  | { kind: 'resident_vehicle'; plate: string; vehicle: ResidentVehicle; residents: Resident[] }
+  | { kind: 'visitor'; plate: string; lastAccess: AccessAudit }
+  | { kind: 'not_found'; plate: string };
+
 @Injectable()
 export class AccessAuditService {
   constructor(
     @InjectRepository(AccessAudit)
     private repository: Repository<AccessAudit>,
+    @InjectRepository(ResidentVehicle)
+    private residentVehiclesRepository: Repository<ResidentVehicle>,
   ) {}
 
   async findAll(query: AccessFilters = {}): Promise<PaginatedResponse<AccessAudit>> {
@@ -93,6 +102,40 @@ export class AccessAuditService {
     });
     if (!item) throw new NotFoundException(`AccessAudit #${id} not found`);
     return item;
+  }
+
+  async searchByPlate(plate: string): Promise<PlateSearchResult> {
+    const normalized = normalizePlate(plate);
+    if (!normalized) return { kind: 'not_found', plate: normalized };
+
+    const residentVehicle = await this.residentVehiclesRepository.findOne({
+      where: { plate: normalized },
+      relations: ['apartment', 'apartment.towerData', 'vehicleBrand'],
+    });
+
+    if (residentVehicle) {
+      const residents = await this.repository.manager.find(Resident, {
+        where: { apartmentId: residentVehicle.apartmentId, isActive: true },
+        relations: ['apartment', 'apartment.towerData', 'residentType'],
+        order: { createdAt: 'DESC' },
+      });
+
+      return { kind: 'resident_vehicle', plate: normalized, vehicle: residentVehicle, residents };
+    }
+
+    const lastAccess = await this.repository
+      .createQueryBuilder('a')
+      .leftJoinAndSelect('a.visitor', 'visitor')
+      .leftJoinAndSelect('a.vehicleBrand', 'vehicleBrand')
+      .leftJoinAndSelect('a.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData')
+      .where('a.vehicle_plate = :plate', { plate: normalized })
+      .andWhere('a.visitor_id IS NOT NULL')
+      .orderBy('a.entryTime', 'DESC')
+      .getOne();
+
+    if (lastAccess) return { kind: 'visitor', plate: normalized, lastAccess };
+    return { kind: 'not_found', plate: normalized };
   }
 
   async create(dto: CreateAccessAuditDto): Promise<AccessAudit> {
