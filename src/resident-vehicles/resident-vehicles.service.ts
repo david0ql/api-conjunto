@@ -78,14 +78,17 @@ export class ResidentVehiclesService {
 
   async update(id: string, dto: UpdateResidentVehicleDto): Promise<ResidentVehicle> {
     const item = await this.findOne(id);
-    Object.assign(item, {
-      ...dto,
+
+    await this.repository.update(id, {
+      apartmentId: dto.apartmentId ?? item.apartmentId,
+      vehicleBrandId: dto.vehicleBrandId ?? item.vehicleBrandId,
+      vehicleType: dto.vehicleType ?? item.vehicleType,
       plate: dto.plate ? normalizePlate(dto.plate) : item.plate,
       color: dto.color !== undefined ? (dto.color?.trim() || null) : item.color,
       model: dto.model !== undefined ? (dto.model?.trim() || null) : item.model,
       notes: dto.notes !== undefined ? (dto.notes?.trim() || null) : item.notes,
     });
-    await this.repository.save(item);
+
     return this.findOne(id);
   }
 
