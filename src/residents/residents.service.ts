@@ -42,7 +42,7 @@ export class ResidentsService {
     }
     if (query.search) {
       const q = `%${query.search}%`;
-      qb.andWhere('(r.name ILIKE :q OR r.last_name ILIKE :q OR r.document ILIKE :q OR r.email ILIKE :q OR r.phone ILIKE :q)', { q });
+      qb.andWhere('(r.name ILIKE :q OR r.last_name ILIKE :q OR r.document ILIKE :q OR r.email ILIKE :q OR r.phone ILIKE :q OR apartment.number ILIKE :q)', { q });
     }
     if (query.typeId) {
       qb.andWhere('r.resident_type_id = :typeId', { typeId: query.typeId });
