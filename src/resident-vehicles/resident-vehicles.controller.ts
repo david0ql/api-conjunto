@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
+import { AdminOrPorterGuard } from '../common/guards/admin-or-porter.guard';
 import { OperationsEmployeeGuard } from '../common/guards/operations-employee.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
@@ -33,13 +34,13 @@ export class ResidentVehiclesController {
   }
 
   @Post()
-  @UseGuards(AdminGuard)
+  @UseGuards(AdminOrPorterGuard)
   create(@Body() dto: CreateResidentVehicleDto, @CurrentUser() user: JwtPayload) {
     return this.service.create(dto, user.sub);
   }
 
   @Patch(':id')
-  @UseGuards(AdminGuard)
+  @UseGuards(AdminOrPorterGuard)
   update(@Param('id') id: string, @Body() dto: UpdateResidentVehicleDto) {
     return this.service.update(id, dto);
   }
