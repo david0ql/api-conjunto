@@ -40,13 +40,14 @@ export class PackagesController {
   @Get()
   @UseGuards(EmployeeGuard)
   findAll(
-    @Query() pagination: PaginationQueryDto,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('delivered') delivered?: string,
     @Query('arrivalTime') arrivalTime?: string,
     @Query('towerId') towerId?: string,
   ) {
-    return this.service.findAll({ ...pagination, search, delivered, arrivalTime, towerId });
+    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, delivered, arrivalTime, towerId });
   }
 
   @Get('my')

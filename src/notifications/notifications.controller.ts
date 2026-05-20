@@ -18,13 +18,14 @@ export class NotificationsController {
   @Get()
   @UseGuards(AdminGuard)
   findAll(
-    @Query() pagination: PaginationQueryDto,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('isRead') isRead?: string,
     @Query('typeId') typeId?: string,
     @Query('createdAt') createdAt?: string,
   ) {
-    return this.service.findAll({ ...pagination, search, isRead, typeId, createdAt });
+    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, isRead, typeId, createdAt });
   }
 
   @Get('my')

@@ -13,12 +13,13 @@ export class EmployeesController {
 
   @Get()
   findAll(
-    @Query() pagination: PaginationQueryDto,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('roleId') roleId?: string,
     @Query('isActive') isActive?: string,
   ) {
-    return this.service.findAll({ ...pagination, search, roleId, isActive });
+    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, roleId, isActive });
   }
 
   @Get(':id')

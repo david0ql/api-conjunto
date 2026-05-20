@@ -42,14 +42,15 @@ export class AccessAuditController {
   @Get()
   @UseGuards(EmployeeOrResidentGuard)
   findAll(
-    @Query() pagination: PaginationQueryDto,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('type') type?: string,
     @Query('entryType') entryType?: string,
     @Query('entryTime') entryTime?: string,
     @Query('towerId') towerId?: string,
   ) {
-    return this.service.findAll({ ...pagination, search, type, entryType, entryTime, towerId });
+    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, type, entryType, entryTime, towerId });
   }
 
   @Get('my')
