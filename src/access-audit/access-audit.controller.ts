@@ -53,6 +53,12 @@ export class AccessAuditController {
     return this.service.findByApartment(aptId);
   }
 
+  @Get('stats')
+  @UseGuards(EmployeeGuard)
+  getStats() {
+    return this.service.getStats();
+  }
+
   @Get(':id')
   @UseGuards(EmployeeGuard)
   findOne(@Param('id') id: string) {

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Between, Repository } from 'typeorm';
 import { AccessAudit } from './entities/access-audit.entity';
 import { CreateAccessAuditDto } from './dto/create-access-audit.dto';
 import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
@@ -24,6 +24,28 @@ export class AccessAuditService {
       take: limit,
     });
     return paginate(data, total, page, limit);
+  }
+
+  async getStats(): Promise<{ total: number; today: number; uniqueVisitorsToday: number }> {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    const [total, today, uniqueVisitorsToday] = await Promise.all([
+      this.repository.count(),
+      this.repository.count({
+        where: { entryTime: Between(todayStart, todayEnd) },
+      }),
+      this.repository
+        .createQueryBuilder('a')
+        .select('COUNT(DISTINCT a.visitor_id)', 'cnt')
+        .where('a.entry_time BETWEEN :start AND :end', { start: todayStart, end: todayEnd })
+        .andWhere('a.visitor_id IS NOT NULL')
+        .getRawOne()
+        .then((r) => parseInt(r?.cnt ?? '0', 10)),
+    ]);
+
+    return { total, today, uniqueVisitorsToday };
   }
 
   async findOne(id: string): Promise<AccessAudit> {
