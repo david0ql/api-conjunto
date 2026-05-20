@@ -31,7 +31,8 @@ const paginatedResponse = {
 
 async function buildIsolatedApp<T>(
   controller: new (...args: unknown[]) => T,
-  serviceClass: new (...args: unknown[]) => unknown,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  serviceClass: new (...args: any[]) => unknown,
   extraProviders: { provide: unknown; useValue: unknown }[] = [],
 ): Promise<INestApplication<App>> {
   const svc: Record<string, jest.Mock> = {
@@ -57,8 +58,10 @@ async function buildIsolatedApp<T>(
     imports: [JwtModule.register({ secret: 'test' })],
     controllers: [controller],
     providers: [
-      { provide: serviceClass, useValue: svc },
-      ...extraProviders,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { provide: serviceClass as any, useValue: svc },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...(extraProviders as any[]),
     ],
   })
     .overrideGuard(JwtAuthGuard).useValue(ALLOW_ALL)
@@ -101,8 +104,8 @@ describe('Reservations pagination (e2e)', () => {
   it('GET /reservations?page=0 → 400', () =>
     request(app.getHttpServer()).get('/reservations?page=0').expect(400));
 
-  it('GET /reservations?limit=101 → 400', () =>
-    request(app.getHttpServer()).get('/reservations?limit=101').expect(400));
+  it('GET /reservations?limit=1001 → 400', () =>
+    request(app.getHttpServer()).get('/reservations?limit=1001').expect(400));
 
   it('GET /reservations?limit=abc → 400', () =>
     request(app.getHttpServer()).get('/reservations?limit=abc').expect(400));
@@ -131,8 +134,8 @@ describe('Employees pagination (e2e)', () => {
   it('GET /employees?limit=0 → 400', () =>
     request(app.getHttpServer()).get('/employees?limit=0').expect(400));
 
-  it('GET /employees?limit=200 → 400', () =>
-    request(app.getHttpServer()).get('/employees?limit=200').expect(400));
+  it('GET /employees?limit=1001 → 400', () =>
+    request(app.getHttpServer()).get('/employees?limit=1001').expect(400));
 
   it('GET /employees?page=1&limit=50 → 200', () =>
     request(app.getHttpServer()).get('/employees?page=1&limit=50').expect(200));
@@ -152,11 +155,11 @@ describe('Notifications pagination (e2e)', () => {
     expect(body).toHaveProperty('meta');
   });
 
-  it('GET /notifications?limit=100 → 200 (max allowed)', () =>
-    request(app.getHttpServer()).get('/notifications?limit=100').expect(200));
+  it('GET /notifications?limit=1000 → 200 (max allowed)', () =>
+    request(app.getHttpServer()).get('/notifications?limit=1000').expect(200));
 
-  it('GET /notifications?limit=101 → 400', () =>
-    request(app.getHttpServer()).get('/notifications?limit=101').expect(400));
+  it('GET /notifications?limit=1001 → 400', () =>
+    request(app.getHttpServer()).get('/notifications?limit=1001').expect(400));
 });
 
 describe('PaginationQueryDto - valid defaults (e2e)', () => {

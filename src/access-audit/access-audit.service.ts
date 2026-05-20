@@ -37,27 +37,29 @@ export class AccessAuditService {
 
   async create(dto: CreateAccessAuditDto): Promise<AccessAudit> {
     const entryType = dto.entryType ?? 'pedestrian';
-    const needsVehicleData = entryType === 'car' || entryType === 'motorcycle';
+    const isCarOrMoto = entryType === 'car' || entryType === 'motorcycle';
+    const isTaxi = entryType === 'taxi';
+    const hasVehicle = isCarOrMoto || isTaxi;
 
     if (!dto.visitorId && !dto.residentId) {
       throw new BadRequestException('Debe indicar visitante o residente');
     }
 
-    if (needsVehicleData) {
-      if (!dto.vehicleBrandId || !dto.vehicleColor || !dto.vehicleModel || !dto.vehiclePlate) {
-        throw new BadRequestException(
-          'Para carro o moto debes registrar marca, color, placa y modelo',
-        );
-      }
+    if (isCarOrMoto && !dto.vehicleBrandId) {
+      throw new BadRequestException('Para carro o moto debes registrar la marca');
+    }
+
+    if (hasVehicle && !dto.vehiclePlate) {
+      throw new BadRequestException('Debes registrar la placa del vehículo');
     }
 
     const item = this.repository.create({
       ...dto,
       entryType,
-      vehicleBrandId: needsVehicleData ? dto.vehicleBrandId : null,
-      vehicleColor: needsVehicleData ? dto.vehicleColor?.trim() : null,
-      vehicleModel: needsVehicleData ? dto.vehicleModel?.trim() : null,
-      vehiclePlate: needsVehicleData ? dto.vehiclePlate?.trim().toUpperCase() : null,
+      vehicleBrandId: isCarOrMoto ? (dto.vehicleBrandId ?? null) : null,
+      vehicleColor: hasVehicle ? (dto.vehicleColor?.trim() || null) : null,
+      vehicleModel: hasVehicle ? (dto.vehicleModel?.trim() || null) : null,
+      vehiclePlate: hasVehicle ? (dto.vehiclePlate?.trim().toUpperCase() ?? null) : null,
     });
 
     return this.repository.save(item);
