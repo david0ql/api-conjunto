@@ -8,7 +8,6 @@ import type { Response } from 'express';
 import { FinesService } from './fines.service';
 import { CreateFineDto } from './dto/create-fine.dto';
 import { UpdateFineDto } from './dto/update-fine.dto';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('fines')
@@ -18,7 +17,6 @@ export class FinesController {
   @Get()
   @UseGuards(OperationsEmployeeGuard)
   findAll(
-    @Query() pagination: PaginationQueryDto,
     @Query('towerId') towerId?: string,
     @Query('apartmentId') apartmentId?: string,
     @Query('residentId') residentId?: string,
@@ -26,7 +24,13 @@ export class FinesController {
     @Query('createdByEmployeeId') createdByEmployeeId?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
+    const pagination = {
+      page: page ? Math.max(1, +page || 1) : 1,
+      limit: limit ? Math.min(1000, Math.max(1, +limit || 15)) : 15,
+    };
     return this.service.findAll(
       { towerId, apartmentId, residentId, fineTypeId, createdByEmployeeId, dateFrom, dateTo },
       pagination,

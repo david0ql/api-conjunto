@@ -7,7 +7,6 @@ import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { ResidentsService } from './residents.service';
 import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('residents')
@@ -16,7 +15,15 @@ export class ResidentsController {
 
   @Get()
   @UseGuards(OperationsEmployeeGuard)
-  findAll(@Query('apartmentId') apartmentId?: string, @Query() pagination: PaginationQueryDto = {}) {
+  findAll(
+    @Query('apartmentId') apartmentId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pagination = {
+      page: page ? Math.max(1, +page || 1) : 1,
+      limit: limit ? Math.min(1000, Math.max(1, +limit || 15)) : 15,
+    };
     return this.service.findAll(apartmentId, pagination);
   }
 
