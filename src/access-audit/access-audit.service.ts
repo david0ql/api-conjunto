@@ -7,6 +7,7 @@ import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { periodToStartDate } from '../common/utils/period-filter';
+import { normalizePlate } from '../common/utils/normalize-plate';
 
 interface AccessFilters extends PaginationQueryDto {
   search?: string;
@@ -114,7 +115,7 @@ export class AccessAuditService {
       vehicleBrandId: isCarOrMoto ? (dto.vehicleBrandId ?? null) : null,
       vehicleColor: hasVehicle ? (dto.vehicleColor?.trim() || null) : null,
       vehicleModel: hasVehicle ? (dto.vehicleModel?.trim() || null) : null,
-      vehiclePlate: hasVehicle ? (dto.vehiclePlate?.trim().toUpperCase() ?? null) : null,
+      vehiclePlate: hasVehicle ? (normalizePlate(dto.vehiclePlate) || null) : null,
     });
 
     return this.repository.save(item);

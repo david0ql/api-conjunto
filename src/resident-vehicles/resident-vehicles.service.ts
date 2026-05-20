@@ -6,6 +6,7 @@ import { CreateResidentVehicleDto } from './dto/create-resident-vehicle.dto';
 import { UpdateResidentVehicleDto } from './dto/update-resident-vehicle.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { normalizePlate } from '../common/utils/normalize-plate';
 
 interface VehicleFilters extends PaginationQueryDto {
   search?: string;
@@ -56,7 +57,7 @@ export class ResidentVehiclesService {
   async create(dto: CreateResidentVehicleDto, employeeId: string): Promise<ResidentVehicle> {
     const item = this.repository.create({
       ...dto,
-      plate: dto.plate.trim().toUpperCase(),
+      plate: normalizePlate(dto.plate),
       color: dto.color?.trim() || null,
       model: dto.model?.trim() || null,
       notes: dto.notes?.trim() || null,
@@ -70,7 +71,7 @@ export class ResidentVehiclesService {
     const item = await this.findOne(id);
     Object.assign(item, {
       ...dto,
-      plate: dto.plate ? dto.plate.trim().toUpperCase() : item.plate,
+      plate: dto.plate ? normalizePlate(dto.plate) : item.plate,
       color: dto.color !== undefined ? (dto.color?.trim() || null) : item.color,
       model: dto.model !== undefined ? (dto.model?.trim() || null) : item.model,
       notes: dto.notes !== undefined ? (dto.notes?.trim() || null) : item.notes,
