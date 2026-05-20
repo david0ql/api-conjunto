@@ -37,7 +37,7 @@ export class EmployeesService {
       qb.andWhere('e.is_active = :isActive', { isActive: query.isActive === 'true' });
     }
 
-    const [data, total] = await qb.orderBy('e.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
+    const [data, total] = await qb.orderBy('e.createdAt', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
     return paginate(data, total, page, limit);
   }
 

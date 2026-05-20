@@ -49,7 +49,7 @@ export class ReservationsService {
       }
     }
 
-    const [data, total] = await qb.orderBy('r.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
+    const [data, total] = await qb.orderBy('r.createdAt', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
     return paginate(data, total, page, limit);
   }
 

@@ -55,7 +55,7 @@ export class AccessAuditService {
       qb.andWhere('apartment.tower_id = :towerId', { towerId: query.towerId });
     }
 
-    const [data, total] = await qb.orderBy('a.entry_time', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
+    const [data, total] = await qb.orderBy('a.entryTime', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
     return paginate(data, total, page, limit);
   }
 

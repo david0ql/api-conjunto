@@ -167,7 +167,7 @@ export class CallsService {
       if (startDate) qb.andWhere('cs.created_at >= :startDate', { startDate });
     }
 
-    const [calls, total] = await qb.orderBy('cs.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
+    const [calls, total] = await qb.orderBy('cs.createdAt', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
 
     const callIds = calls.map((call) => call.id);
     const timelineByCallId = new Map<string, CallTimelineEventPayload[]>();

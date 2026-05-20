@@ -32,7 +32,7 @@ export class ResidentVehiclesService {
       qb.andWhere('(rv.plate ILIKE :q OR vehicleBrand.name ILIKE :q OR apartment.number ILIKE :q)', { q });
     }
 
-    const [data, total] = await qb.orderBy('rv.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
+    const [data, total] = await qb.orderBy('rv.createdAt', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
     return paginate(data, total, page, limit);
   }
 

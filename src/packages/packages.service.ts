@@ -53,7 +53,7 @@ export class PackagesService {
       qb.andWhere('apartment.tower_id = :towerId', { towerId: query.towerId });
     }
 
-    const [data, total] = await qb.orderBy('pkg.arrival_time', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
+    const [data, total] = await qb.orderBy('pkg.arrivalTime', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
     return paginate(data, total, page, limit);
   }
 

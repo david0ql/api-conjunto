@@ -55,7 +55,7 @@ export class NotificationsService {
       if (startDate) qb.andWhere('n.created_at >= :startDate', { startDate });
     }
 
-    const [data, total] = await qb.orderBy('n.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
+    const [data, total] = await qb.orderBy('n.createdAt', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
     return paginate(data, total, page, limit);
   }
 
