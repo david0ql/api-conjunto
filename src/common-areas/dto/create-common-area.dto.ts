@@ -14,4 +14,8 @@ export class CreateCommonAreaDto {
   @Min(1)
   @IsOptional()
   maxCapacity?: number;
+
+  @IsString()
+  @IsOptional()
+  schedule?: string;
 }

@@ -14,6 +14,9 @@ export class CommonArea {
   @Column({ name: 'max_capacity', type: 'int', nullable: true })
   maxCapacity: number;
 
+  @Column({ type: 'text', nullable: true })
+  schedule: string;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }
