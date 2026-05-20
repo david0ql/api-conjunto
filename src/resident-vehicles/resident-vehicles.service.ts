@@ -10,6 +10,7 @@ import { normalizePlate } from '../common/utils/normalize-plate';
 
 interface VehicleFilters extends PaginationQueryDto {
   search?: string;
+  apartmentId?: string;
 }
 
 @Injectable()
@@ -31,6 +32,9 @@ export class ResidentVehiclesService {
     if (query.search) {
       const q = `%${query.search}%`;
       qb.andWhere('(rv.plate ILIKE :q OR vehicleBrand.name ILIKE :q OR apartment.number ILIKE :q)', { q });
+    }
+    if (query.apartmentId) {
+      qb.andWhere('rv.apartment_id = :apartmentId', { apartmentId: query.apartmentId });
     }
 
     const [data, total] = await qb.orderBy('rv.createdAt', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();

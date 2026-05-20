@@ -14,6 +14,7 @@ interface PackageFilters extends PaginationQueryDto {
   delivered?: string;
   arrivalTime?: string;
   towerId?: string;
+  apartmentId?: string;
 }
 
 @Injectable()
@@ -51,6 +52,9 @@ export class PackagesService {
     }
     if (query.towerId) {
       qb.andWhere('apartment.tower_id = :towerId', { towerId: query.towerId });
+    }
+    if (query.apartmentId) {
+      qb.andWhere('pkg.apartment_id = :apartmentId', { apartmentId: query.apartmentId });
     }
 
     const [data, total] = await qb.orderBy('pkg.arrivalTime', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();

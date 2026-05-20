@@ -46,8 +46,9 @@ export class PackagesController {
     @Query('delivered') delivered?: string,
     @Query('arrivalTime') arrivalTime?: string,
     @Query('towerId') towerId?: string,
+    @Query('apartmentId') apartmentId?: string,
   ) {
-    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, delivered, arrivalTime, towerId });
+    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, delivered, arrivalTime, towerId, apartmentId });
   }
 
   @Get('my')
