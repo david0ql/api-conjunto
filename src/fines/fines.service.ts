@@ -18,6 +18,7 @@ import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dt
 type PdfDocument = InstanceType<typeof PDFDocument>;
 
 interface FineFilters {
+  search?: string;
   towerId?: string;
   apartmentId?: string;
   residentId?: string;
@@ -232,6 +233,11 @@ export class FinesService {
       .leftJoinAndSelect('fine.fineType', 'fineType')
       .leftJoinAndSelect('fine.createdByEmployee', 'createdByEmployee')
       .orderBy('fine.createdAt', 'DESC');
+
+    if (filters.search) {
+      const q = `%${filters.search}%`;
+      qb.andWhere('(apartment.number ILIKE :q OR resident.name ILIKE :q OR resident.last_name ILIKE :q OR fineType.name ILIKE :q OR fine.notes ILIKE :q)', { q });
+    }
 
     if (filters.towerId) {
       qb.andWhere('(apartment.tower_id = :towerId OR residentApartment.tower_id = :towerId)', {

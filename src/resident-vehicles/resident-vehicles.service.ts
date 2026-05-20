@@ -7,6 +7,10 @@ import { UpdateResidentVehicleDto } from './dto/update-resident-vehicle.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
+interface VehicleFilters extends PaginationQueryDto {
+  search?: string;
+}
+
 @Injectable()
 export class ResidentVehiclesService {
   constructor(
@@ -14,15 +18,21 @@ export class ResidentVehiclesService {
     private repository: Repository<ResidentVehicle>,
   ) {}
 
-  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<ResidentVehicle>> {
+  async findAll(query: VehicleFilters = {}): Promise<PaginatedResponse<ResidentVehicle>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [data, total] = await this.repository.findAndCount({
-      relations: ['apartment', 'apartment.towerData', 'vehicleBrand', 'createdByEmployee'],
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.repository.createQueryBuilder('rv')
+      .leftJoinAndSelect('rv.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData')
+      .leftJoinAndSelect('rv.vehicleBrand', 'vehicleBrand')
+      .leftJoinAndSelect('rv.createdByEmployee', 'createdByEmployee');
+
+    if (query.search) {
+      const q = `%${query.search}%`;
+      qb.andWhere('(rv.plate ILIKE :q OR vehicleBrand.name ILIKE :q OR apartment.number ILIKE :q)', { q });
+    }
+
+    const [data, total] = await qb.orderBy('rv.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
     return paginate(data, total, page, limit);
   }
 

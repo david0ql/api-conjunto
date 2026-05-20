@@ -39,8 +39,14 @@ export class PackagesController {
 
   @Get()
   @UseGuards(EmployeeGuard)
-  findAll(@Query() pagination: PaginationQueryDto) {
-    return this.service.findAll(pagination);
+  findAll(
+    @Query() pagination: PaginationQueryDto,
+    @Query('search') search?: string,
+    @Query('delivered') delivered?: string,
+    @Query('arrivalTime') arrivalTime?: string,
+    @Query('towerId') towerId?: string,
+  ) {
+    return this.service.findAll({ ...pagination, search, delivered, arrivalTime, towerId });
   }
 
   @Get('my')

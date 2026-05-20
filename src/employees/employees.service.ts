@@ -8,6 +8,12 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
+interface EmployeeFilters extends PaginationQueryDto {
+  search?: string;
+  roleId?: string;
+  isActive?: string;
+}
+
 @Injectable()
 export class EmployeesService {
   constructor(
@@ -15,15 +21,23 @@ export class EmployeesService {
     private repository: Repository<Employee>,
   ) {}
 
-  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<Employee>> {
+  async findAll(query: EmployeeFilters = {}): Promise<PaginatedResponse<Employee>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [data, total] = await this.repository.findAndCount({
-      relations: ['role'],
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.repository.createQueryBuilder('e').leftJoinAndSelect('e.role', 'role');
+
+    if (query.search) {
+      const q = `%${query.search}%`;
+      qb.andWhere('(e.name ILIKE :q OR e.last_name ILIKE :q OR e.username ILIKE :q OR e.document ILIKE :q)', { q });
+    }
+    if (query.roleId) {
+      qb.andWhere('e.role_id = :roleId', { roleId: query.roleId });
+    }
+    if (query.isActive !== undefined && query.isActive !== '') {
+      qb.andWhere('e.is_active = :isActive', { isActive: query.isActive === 'true' });
+    }
+
+    const [data, total] = await qb.orderBy('e.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
     return paginate(data, total, page, limit);
   }
 

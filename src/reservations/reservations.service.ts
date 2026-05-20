@@ -8,6 +8,13 @@ import { ReservationStatus } from '../reservation-statuses/entities/reservation-
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { periodToStartDate } from '../common/utils/period-filter';
+
+interface ReservationFilters extends PaginationQueryDto {
+  search?: string;
+  status?: string;
+  reservationDate?: string;
+}
 
 @Injectable()
 export class ReservationsService {
@@ -20,15 +27,29 @@ export class ReservationsService {
     private reservationStatusesRepository: Repository<ReservationStatus>,
   ) {}
 
-  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<Reservation>> {
+  async findAll(query: ReservationFilters = {}): Promise<PaginatedResponse<Reservation>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [data, total] = await this.repository.findAndCount({
-      relations: ['resident', 'area', 'status'],
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.repository.createQueryBuilder('r')
+      .leftJoinAndSelect('r.resident', 'resident')
+      .leftJoinAndSelect('r.area', 'area')
+      .leftJoinAndSelect('r.status', 'status');
+
+    if (query.search) {
+      const q = `%${query.search}%`;
+      qb.andWhere('(resident.name ILIKE :q OR resident.last_name ILIKE :q OR area.name ILIKE :q)', { q });
+    }
+    if (query.status) {
+      qb.andWhere('status.code = :status', { status: query.status });
+    }
+    if (query.reservationDate) {
+      const startDate = periodToStartDate(query.reservationDate);
+      if (startDate) {
+        qb.andWhere('r.reservation_date >= :startDate', { startDate: startDate.toISOString().split('T')[0] });
+      }
+    }
+
+    const [data, total] = await qb.orderBy('r.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
     return paginate(data, total, page, limit);
   }
 

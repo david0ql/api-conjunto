@@ -10,6 +10,14 @@ import { Resident } from '../residents/entities/resident.entity';
 import { CallsPushService } from '../calls/calls-push.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { periodToStartDate } from '../common/utils/period-filter';
+
+interface NotificationFilters extends PaginationQueryDto {
+  search?: string;
+  isRead?: string;
+  typeId?: string;
+  createdAt?: string;
+}
 
 @Injectable()
 export class NotificationsService {
@@ -23,15 +31,31 @@ export class NotificationsService {
     private readonly callsPushService: CallsPushService,
   ) {}
 
-  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<Notification>> {
+  async findAll(query: NotificationFilters = {}): Promise<PaginatedResponse<Notification>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [data, total] = await this.repository.findAndCount({
-      relations: ['apartment', 'apartment.towerData', 'resident', 'notificationType'],
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.repository.createQueryBuilder('n')
+      .leftJoinAndSelect('n.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData')
+      .leftJoinAndSelect('n.resident', 'resident')
+      .leftJoinAndSelect('n.notificationType', 'notificationType');
+
+    if (query.search) {
+      const q = `%${query.search}%`;
+      qb.andWhere('(n.message ILIKE :q OR apartment.number ILIKE :q)', { q });
+    }
+    if (query.isRead !== undefined && query.isRead !== '') {
+      qb.andWhere('n.is_read = :isRead', { isRead: query.isRead === 'true' });
+    }
+    if (query.typeId) {
+      qb.andWhere('n.notification_type_id = :typeId', { typeId: query.typeId });
+    }
+    if (query.createdAt) {
+      const startDate = periodToStartDate(query.createdAt);
+      if (startDate) qb.andWhere('n.created_at >= :startDate', { startDate });
+    }
+
+    const [data, total] = await qb.orderBy('n.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
     return paginate(data, total, page, limit);
   }
 

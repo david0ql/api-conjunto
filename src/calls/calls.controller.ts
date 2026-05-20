@@ -88,8 +88,14 @@ export class CallsController {
 
   @Get('history')
   @UseGuards(AdminOrPorterGuard)
-  getHistory(@Query() pagination: PaginationQueryDto) {
-    return this.callsService.getCallHistory(pagination);
+  getHistory(
+    @Query() pagination: PaginationQueryDto,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('direction') direction?: string,
+    @Query('createdAt') createdAt?: string,
+  ) {
+    return this.callsService.getCallHistory({ ...pagination, search, status, direction, createdAt });
   }
 
   @Get('ice-config')

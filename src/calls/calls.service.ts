@@ -23,6 +23,14 @@ import { CallTraceEvent } from './entities/call-trace-event.entity';
 import { CallSession } from './entities/call-session.entity';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { periodToStartDate } from '../common/utils/period-filter';
+
+interface CallHistoryFilters extends PaginationQueryDto {
+  search?: string;
+  status?: string;
+  direction?: string;
+  createdAt?: string;
+}
 
 @Injectable()
 export class CallsService {
@@ -133,22 +141,33 @@ export class CallsService {
     });
   }
 
-  async getCallHistory(query: PaginationQueryDto = {}): Promise<PaginatedResponse<CallSessionPayload>> {
+  async getCallHistory(query: CallHistoryFilters = {}): Promise<PaginatedResponse<CallSessionPayload>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [calls, total] = await this.callSessionsRepository.findAndCount({
-      relations: [
-        'apartment',
-        'apartment.towerData',
-        'initiatedByEmployee',
-        'initiatedByResident',
-        'acceptedByResident',
-        'acceptedByEmployee',
-      ],
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.callSessionsRepository.createQueryBuilder('cs')
+      .leftJoinAndSelect('cs.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData')
+      .leftJoinAndSelect('cs.initiatedByEmployee', 'initiatedByEmployee')
+      .leftJoinAndSelect('cs.initiatedByResident', 'initiatedByResident')
+      .leftJoinAndSelect('cs.acceptedByResident', 'acceptedByResident')
+      .leftJoinAndSelect('cs.acceptedByEmployee', 'acceptedByEmployee');
+
+    if (query.search) {
+      const q = `%${query.search}%`;
+      qb.andWhere('(initiatedByEmployee.name ILIKE :q OR initiatedByEmployee.last_name ILIKE :q OR initiatedByResident.name ILIKE :q OR initiatedByResident.last_name ILIKE :q OR apartment.number ILIKE :q)', { q });
+    }
+    if (query.status) {
+      qb.andWhere('cs.status = :status', { status: query.status });
+    }
+    if (query.direction) {
+      qb.andWhere('cs.direction = :direction', { direction: query.direction });
+    }
+    if (query.createdAt) {
+      const startDate = periodToStartDate(query.createdAt);
+      if (startDate) qb.andWhere('cs.created_at >= :startDate', { startDate });
+    }
+
+    const [calls, total] = await qb.orderBy('cs.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
 
     const callIds = calls.map((call) => call.id);
     const timelineByCallId = new Map<string, CallTimelineEventPayload[]>();

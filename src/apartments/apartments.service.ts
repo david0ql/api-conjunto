@@ -8,6 +8,12 @@ import { Tower } from '../towers/entities/tower.entity';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
+interface ApartmentFilters extends PaginationQueryDto {
+  search?: string;
+  towerId?: string;
+  occupancy?: string;
+}
+
 @Injectable()
 export class ApartmentsService {
   constructor(
@@ -26,16 +32,26 @@ export class ApartmentsService {
     return apartments.map((apt) => ({ ...apt, residentCount: countMap.get(apt.id) ?? 0 }));
   }
 
-  async findAll(towerId?: string, query: PaginationQueryDto = {}): Promise<PaginatedResponse<Apartment>> {
+  async findAll(towerId?: string, query: ApartmentFilters = {}): Promise<PaginatedResponse<Apartment>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [apartments, total] = await this.repository.findAndCount({
-      where: towerId ? { towerId } : undefined,
-      relations: ['towerData'],
-      order: { tower: 'ASC', number: 'ASC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const effectiveTowerId = query.towerId ?? towerId;
+    const qb = this.repository.createQueryBuilder('a').leftJoinAndSelect('a.towerData', 'towerData');
+
+    if (effectiveTowerId) {
+      qb.andWhere('a.tower_id = :towerId', { towerId: effectiveTowerId });
+    }
+    if (query.search) {
+      const q = `%${query.search}%`;
+      qb.andWhere('(a.number ILIKE :q OR towerData.name ILIKE :q)', { q });
+    }
+    if (query.occupancy === 'occupied') {
+      qb.andWhere('EXISTS (SELECT 1 FROM residents r WHERE r.apartment_id = a.id)');
+    } else if (query.occupancy === 'vacant') {
+      qb.andWhere('NOT EXISTS (SELECT 1 FROM residents r WHERE r.apartment_id = a.id)');
+    }
+
+    const [apartments, total] = await qb.orderBy('a.tower', 'ASC').addOrderBy('a.number', 'ASC').skip((page - 1) * limit).take(limit).getManyAndCount();
     const data = await this.attachResidentCounts(apartments);
     return paginate(data, total, page, limit);
   }

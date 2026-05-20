@@ -12,8 +12,13 @@ export class EmployeesController {
   constructor(private readonly service: EmployeesService) {}
 
   @Get()
-  findAll(@Query() pagination: PaginationQueryDto) {
-    return this.service.findAll(pagination);
+  findAll(
+    @Query() pagination: PaginationQueryDto,
+    @Query('search') search?: string,
+    @Query('roleId') roleId?: string,
+    @Query('isActive') isActive?: string,
+  ) {
+    return this.service.findAll({ ...pagination, search, roleId, isActive });
   }
 
   @Get(':id')

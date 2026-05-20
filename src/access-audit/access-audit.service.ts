@@ -6,6 +6,15 @@ import { CreateAccessAuditDto } from './dto/create-access-audit.dto';
 import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { periodToStartDate } from '../common/utils/period-filter';
+
+interface AccessFilters extends PaginationQueryDto {
+  search?: string;
+  type?: string;
+  entryType?: string;
+  entryTime?: string;
+  towerId?: string;
+}
 
 @Injectable()
 export class AccessAuditService {
@@ -14,15 +23,39 @@ export class AccessAuditService {
     private repository: Repository<AccessAudit>,
   ) {}
 
-  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<AccessAudit>> {
+  async findAll(query: AccessFilters = {}): Promise<PaginatedResponse<AccessAudit>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [data, total] = await this.repository.findAndCount({
-      relations: ['resident', 'visitor', 'vehicle', 'vehicleBrand', 'apartment', 'authorizedByEmployee'],
-      order: { entryTime: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.repository.createQueryBuilder('a')
+      .leftJoinAndSelect('a.resident', 'resident')
+      .leftJoinAndSelect('a.visitor', 'visitor')
+      .leftJoinAndSelect('a.vehicle', 'vehicle')
+      .leftJoinAndSelect('a.vehicleBrand', 'vehicleBrand')
+      .leftJoinAndSelect('a.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData')
+      .leftJoinAndSelect('a.authorizedByEmployee', 'authorizedByEmployee');
+
+    if (query.search) {
+      const q = `%${query.search}%`;
+      qb.andWhere('(visitor.name ILIKE :q OR visitor.last_name ILIKE :q OR resident.name ILIKE :q OR resident.last_name ILIKE :q OR a.vehicle_plate ILIKE :q OR apartment.number ILIKE :q)', { q });
+    }
+    if (query.type === 'visitor') {
+      qb.andWhere('a.visitor_id IS NOT NULL');
+    } else if (query.type === 'resident') {
+      qb.andWhere('a.resident_id IS NOT NULL');
+    }
+    if (query.entryType) {
+      qb.andWhere('a.entry_type = :entryType', { entryType: query.entryType });
+    }
+    if (query.entryTime) {
+      const startDate = periodToStartDate(query.entryTime);
+      if (startDate) qb.andWhere('a.entry_time >= :startDate', { startDate });
+    }
+    if (query.towerId) {
+      qb.andWhere('apartment.tower_id = :towerId', { towerId: query.towerId });
+    }
+
+    const [data, total] = await qb.orderBy('a.entry_time', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
     return paginate(data, total, page, limit);
   }
 

@@ -17,8 +17,13 @@ export class ReservationsController {
 
   @Get()
   @UseGuards(EmployeeGuard)
-  findAll(@Query() pagination: PaginationQueryDto) {
-    return this.service.findAll(pagination);
+  findAll(
+    @Query() pagination: PaginationQueryDto,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('reservationDate') reservationDate?: string,
+  ) {
+    return this.service.findAll({ ...pagination, search, status, reservationDate });
   }
 
   @Get('my')

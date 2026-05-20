@@ -15,10 +15,13 @@ export class ApartmentsController {
     @Query('towerId') towerId?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('occupancy') occupancy?: string,
   ) {
     const pagination = {
       page: page ? Math.max(1, +page || 1) : 1,
       limit: limit ? Math.min(1000, Math.max(1, +limit || 15)) : 15,
+      search, occupancy,
     };
     return this.service.findAll(towerId, pagination);
   }

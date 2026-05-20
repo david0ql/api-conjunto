@@ -17,8 +17,11 @@ export class ResidentVehiclesController {
 
   @Get()
   @UseGuards(OperationsEmployeeGuard)
-  findAll(@Query() pagination: PaginationQueryDto) {
-    return this.service.findAll(pagination);
+  findAll(
+    @Query() pagination: PaginationQueryDto,
+    @Query('search') search?: string,
+  ) {
+    return this.service.findAll({ ...pagination, search });
   }
 
   @Get('by-apartment/:apartmentId')

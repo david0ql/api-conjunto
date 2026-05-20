@@ -19,10 +19,16 @@ export class ResidentsController {
     @Query('apartmentId') apartmentId?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('typeId') typeId?: string,
+    @Query('isActive') isActive?: string,
+    @Query('hasApartment') hasApartment?: string,
+    @Query('towerId') towerId?: string,
   ) {
     const pagination = {
       page: page ? Math.max(1, +page || 1) : 1,
       limit: limit ? Math.min(1000, Math.max(1, +limit || 15)) : 15,
+      search, typeId, isActive, hasApartment, towerId,
     };
     return this.service.findAll(apartmentId, pagination);
   }

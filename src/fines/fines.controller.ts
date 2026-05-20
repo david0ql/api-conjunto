@@ -17,6 +17,7 @@ export class FinesController {
   @Get()
   @UseGuards(OperationsEmployeeGuard)
   findAll(
+    @Query('search') search?: string,
     @Query('towerId') towerId?: string,
     @Query('apartmentId') apartmentId?: string,
     @Query('residentId') residentId?: string,
@@ -32,7 +33,7 @@ export class FinesController {
       limit: limit ? Math.min(1000, Math.max(1, +limit || 15)) : 15,
     };
     return this.service.findAll(
-      { towerId, apartmentId, residentId, fineTypeId, createdByEmployeeId, dateFrom, dateTo },
+      { search, towerId, apartmentId, residentId, fineTypeId, createdByEmployeeId, dateFrom, dateTo },
       pagination,
     );
   }

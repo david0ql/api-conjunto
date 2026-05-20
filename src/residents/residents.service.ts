@@ -9,6 +9,15 @@ import { UpdateResidentDto } from './dto/update-resident.dto';
 import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { periodToStartDate } from '../common/utils/period-filter';
+
+interface ResidentFilters extends PaginationQueryDto {
+  search?: string;
+  typeId?: string;
+  isActive?: string;
+  hasApartment?: string;
+  towerId?: string;
+}
 
 @Injectable()
 export class ResidentsService {
@@ -19,7 +28,7 @@ export class ResidentsService {
     private residentApartmentsRepository: Repository<ResidentApartment>,
   ) {}
 
-  async findAll(apartmentId?: string, query: PaginationQueryDto = {}): Promise<PaginatedResponse<Resident>> {
+  async findAll(apartmentId?: string, query: ResidentFilters = {}): Promise<PaginatedResponse<Resident>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
     const qb = this.repository
@@ -29,7 +38,25 @@ export class ResidentsService {
       .leftJoinAndSelect('apartment.towerData', 'towerData');
 
     if (apartmentId) {
-      qb.where('r.apartment_id = :apartmentId', { apartmentId });
+      qb.andWhere('r.apartment_id = :apartmentId', { apartmentId });
+    }
+    if (query.search) {
+      const q = `%${query.search}%`;
+      qb.andWhere('(r.name ILIKE :q OR r.last_name ILIKE :q OR r.document ILIKE :q OR r.email ILIKE :q OR r.phone ILIKE :q)', { q });
+    }
+    if (query.typeId) {
+      qb.andWhere('r.resident_type_id = :typeId', { typeId: query.typeId });
+    }
+    if (query.isActive !== undefined && query.isActive !== '') {
+      qb.andWhere('r.is_active = :isActive', { isActive: query.isActive === 'true' });
+    }
+    if (query.hasApartment === 'yes') {
+      qb.andWhere('r.apartment_id IS NOT NULL');
+    } else if (query.hasApartment === 'no') {
+      qb.andWhere('r.apartment_id IS NULL');
+    }
+    if (query.towerId) {
+      qb.andWhere('apartment.tower_id = :towerId', { towerId: query.towerId });
     }
 
     const [data, total] = await qb

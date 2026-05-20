@@ -7,6 +7,14 @@ import { CreatePackageDto } from './dto/create-package.dto';
 import { UpdatePackageDto } from './dto/update-package.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { periodToStartDate } from '../common/utils/period-filter';
+
+interface PackageFilters extends PaginationQueryDto {
+  search?: string;
+  delivered?: string;
+  arrivalTime?: string;
+  towerId?: string;
+}
 
 @Injectable()
 export class PackagesService {
@@ -17,10 +25,10 @@ export class PackagesService {
     private photoRepository: Repository<PackagePhoto>,
   ) {}
 
-  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<Package>> {
+  async findAll(query: PackageFilters = {}): Promise<PaginatedResponse<Package>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [data, total] = await this.repository
+    const qb = this.repository
       .createQueryBuilder('pkg')
       .leftJoinAndSelect('pkg.apartment', 'apartment')
       .leftJoinAndSelect('apartment.towerData', 'towerData')
@@ -28,11 +36,24 @@ export class PackagesService {
       .leftJoinAndSelect('pkg.createdByEmployee', 'createdByEmployee')
       .leftJoinAndSelect('pkg.receivedByResident', 'receivedByResident')
       .leftJoinAndSelect('pkg.deliveredByEmployee', 'deliveredByEmployee')
-      .loadRelationCountAndMap('pkg.photoCount', 'pkg.photos')
-      .orderBy('pkg.arrivalTime', 'DESC')
-      .skip((page - 1) * limit)
-      .take(limit)
-      .getManyAndCount();
+      .loadRelationCountAndMap('pkg.photoCount', 'pkg.photos');
+
+    if (query.search) {
+      const q = `%${query.search}%`;
+      qb.andWhere('(apartment.number ILIKE :q OR resident.name ILIKE :q OR resident.last_name ILIKE :q OR pkg.description ILIKE :q)', { q });
+    }
+    if (query.delivered !== undefined && query.delivered !== '') {
+      qb.andWhere('pkg.delivered = :delivered', { delivered: query.delivered === 'true' });
+    }
+    if (query.arrivalTime) {
+      const startDate = periodToStartDate(query.arrivalTime);
+      if (startDate) qb.andWhere('pkg.arrival_time >= :startDate', { startDate });
+    }
+    if (query.towerId) {
+      qb.andWhere('apartment.tower_id = :towerId', { towerId: query.towerId });
+    }
+
+    const [data, total] = await qb.orderBy('pkg.arrival_time', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
     return paginate(data, total, page, limit);
   }
 
