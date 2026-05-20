@@ -5,6 +5,13 @@ import { Visitor } from './entities/visitor.entity';
 import { CreateVisitorDto } from './dto/create-visitor.dto';
 import { UpdateVisitorDto } from './dto/update-visitor.dto';
 import { AccessAudit } from '../access-audit/entities/access-audit.entity';
+import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+
+interface VisitorListFilters {
+  page?: number;
+  limit?: number;
+  search?: string;
+}
 
 export interface VisitorSearchResult {
   visitor: Visitor | null;
@@ -20,8 +27,22 @@ export class VisitorsService {
     private readonly accessAuditRepository: Repository<AccessAudit>,
   ) {}
 
-  async findAll(): Promise<Visitor[]> {
-    return this.repository.find();
+  async findAll(filters: VisitorListFilters = {}): Promise<PaginatedResponse<Visitor>> {
+    const page = filters.page ?? 1;
+    const limit = filters.limit ?? 15;
+    const qb = this.repository.createQueryBuilder('v');
+
+    if (filters.search) {
+      const q = `%${filters.search}%`;
+      qb.andWhere('(v.name ILIKE :q OR v.last_name ILIKE :q OR v.document ILIKE :q OR v.phone ILIKE :q)', { q });
+    }
+
+    const [data, total] = await qb.orderBy('v.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
+    return paginate(data, total, page, limit);
+  }
+
+  async findAllUnpaginated(): Promise<Visitor[]> {
+    return this.repository.find({ order: { createdAt: 'DESC' } });
   }
 
   async findOne(id: string): Promise<Visitor> {
@@ -63,6 +84,12 @@ export class VisitorsService {
   async update(id: string, dto: UpdateVisitorDto): Promise<Visitor> {
     const item = await this.findOne(id);
     Object.assign(item, dto);
+    return this.repository.save(item);
+  }
+
+  async updatePhoto(id: string, photoPath: string): Promise<Visitor> {
+    const item = await this.findOne(id);
+    item.photoPath = photoPath;
     return this.repository.save(item);
   }
 

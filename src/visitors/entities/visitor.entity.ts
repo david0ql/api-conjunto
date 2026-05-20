@@ -17,6 +17,9 @@ export class Visitor {
   @Column({ length: 20, nullable: true })
   phone: string;
 
+  @Column({ name: 'photo_path', type: 'varchar', length: 255, nullable: true })
+  photoPath: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }
