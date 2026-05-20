@@ -105,11 +105,14 @@ export class AccessAuditController {
     @CurrentUser() user: JwtPayload,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.service.create({
-      ...dto,
-      visitorPhotoPath: file ? `${UPLOAD_DIR}/${file.filename}` : dto.visitorPhotoPath,
-      authorizedByEmployeeId: user.sub,
-    });
+    return this.service.create(
+      {
+        ...dto,
+        visitorPhotoPath: file ? `${UPLOAD_DIR}/${file.filename}` : dto.visitorPhotoPath,
+        authorizedByEmployeeId: user.sub,
+      },
+      { visitorPhotoWasUploaded: Boolean(file) },
+    );
   }
 
   @Patch(':id')

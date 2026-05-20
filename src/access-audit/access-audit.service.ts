@@ -6,6 +6,7 @@ import { CreateAccessAuditDto } from './dto/create-access-audit.dto';
 import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
 import { ResidentVehicle } from '../resident-vehicles/entities/resident-vehicle.entity';
 import { Resident } from '../residents/entities/resident.entity';
+import { Visitor } from '../visitors/entities/visitor.entity';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { periodToStartDate } from '../common/utils/period-filter';
@@ -32,6 +33,8 @@ export class AccessAuditService {
     private repository: Repository<AccessAudit>,
     @InjectRepository(ResidentVehicle)
     private residentVehiclesRepository: Repository<ResidentVehicle>,
+    @InjectRepository(Visitor)
+    private visitorsRepository: Repository<Visitor>,
   ) {}
 
   async findAll(query: AccessFilters = {}): Promise<PaginatedResponse<AccessAudit>> {
@@ -138,7 +141,7 @@ export class AccessAuditService {
     return { kind: 'not_found', plate: normalized };
   }
 
-  async create(dto: CreateAccessAuditDto): Promise<AccessAudit> {
+  async create(dto: CreateAccessAuditDto, options: { visitorPhotoWasUploaded?: boolean } = {}): Promise<AccessAudit> {
     const entryType = dto.entryType ?? 'pedestrian';
     const isCarOrMoto = entryType === 'car' || entryType === 'motorcycle';
     const isTaxi = entryType === 'taxi';
@@ -156,16 +159,33 @@ export class AccessAuditService {
       throw new BadRequestException('Debes registrar la placa del vehículo');
     }
 
+    const visitor = dto.visitorId
+      ? await this.visitorsRepository.findOne({ where: { id: dto.visitorId } })
+      : null;
+    const requestedVisitorPhotoPath = dto.visitorPhotoPath?.trim() || null;
+    const visitorPhotoPath = options.visitorPhotoWasUploaded
+      ? requestedVisitorPhotoPath
+      : (visitor?.photoPath ?? requestedVisitorPhotoPath);
+
     const item = this.repository.create({
       ...dto,
       entryType,
+      visitorPhotoPath,
       vehicleBrandId: isCarOrMoto ? (dto.vehicleBrandId ?? null) : null,
       vehicleColor: hasVehicle ? (dto.vehicleColor?.trim() || null) : null,
       vehicleModel: hasVehicle ? (dto.vehicleModel?.trim() || null) : null,
       vehiclePlate: hasVehicle ? (normalizePlate(dto.vehiclePlate) || null) : null,
     });
 
-    return this.repository.save(item);
+    const saved = await this.repository.save(item);
+
+    if (visitor && visitorPhotoPath && visitor.photoPath !== visitorPhotoPath) {
+      visitor.photoPath = visitorPhotoPath;
+      visitor.photoUpdatedAt = saved.entryTime ?? new Date();
+      await this.visitorsRepository.save(visitor);
+    }
+
+    return saved;
   }
 
   async update(id: string, dto: UpdateAccessAuditDto): Promise<AccessAudit> {

@@ -38,11 +38,14 @@ export class VisitorsService {
     }
 
     const [data, total] = await qb.orderBy('v.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
+    await this.applyLatestAccessPhotoFallback(data);
     return paginate(data, total, page, limit);
   }
 
   async findAllUnpaginated(): Promise<Visitor[]> {
-    return this.repository.find({ order: { createdAt: 'DESC' } });
+    const visitors = await this.repository.find({ order: { createdAt: 'DESC' } });
+    await this.applyLatestAccessPhotoFallback(visitors);
+    return visitors;
   }
 
   async findOne(id: string): Promise<Visitor> {
@@ -90,11 +93,34 @@ export class VisitorsService {
   async updatePhoto(id: string, photoPath: string): Promise<Visitor> {
     const item = await this.findOne(id);
     item.photoPath = photoPath;
+    item.photoUpdatedAt = new Date();
     return this.repository.save(item);
   }
 
   async remove(id: string): Promise<void> {
     const item = await this.findOne(id);
     await this.repository.remove(item);
+  }
+
+  private async applyLatestAccessPhotoFallback(visitors: Visitor[]): Promise<void> {
+    await Promise.all(
+      visitors.map(async (visitor) => {
+        const lastAccessWithPhoto = await this.accessAuditRepository.findOne({
+          where: { visitorId: visitor.id },
+          order: { entryTime: 'DESC' },
+        });
+        if (!lastAccessWithPhoto?.visitorPhotoPath?.trim()) return;
+        const lastAccessPhoto = lastAccessWithPhoto.visitorPhotoPath.trim();
+
+        const accessIsNewer =
+          visitor.photoUpdatedAt != null &&
+          lastAccessWithPhoto.entryTime != null &&
+          lastAccessWithPhoto.entryTime > visitor.photoUpdatedAt;
+
+        if (!visitor.photoPath || accessIsNewer) {
+          visitor.photoPath = lastAccessPhoto;
+        }
+      }),
+    );
   }
 }

@@ -5,9 +5,10 @@ import { AccessAuditController } from './access-audit.controller';
 import { AccessAudit } from './entities/access-audit.entity';
 import { ResidentsModule } from '../residents/residents.module';
 import { ResidentVehicle } from '../resident-vehicles/entities/resident-vehicle.entity';
+import { Visitor } from '../visitors/entities/visitor.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AccessAudit, ResidentVehicle]), ResidentsModule],
+  imports: [TypeOrmModule.forFeature([AccessAudit, ResidentVehicle, Visitor]), ResidentsModule],
   controllers: [AccessAuditController],
   providers: [AccessAuditService],
   exports: [AccessAuditService],

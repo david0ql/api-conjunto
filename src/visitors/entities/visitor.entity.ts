@@ -20,6 +20,9 @@ export class Visitor {
   @Column({ name: 'photo_path', type: 'varchar', length: 255, nullable: true })
   photoPath: string | null;
 
+  @Column({ name: 'photo_updated_at', type: 'timestamptz', nullable: true })
+  photoUpdatedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }
