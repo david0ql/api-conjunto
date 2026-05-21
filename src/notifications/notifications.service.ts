@@ -190,7 +190,7 @@ export class NotificationsService {
     });
     const resident = await this.residentsRepository.findOne({
       where: { id: residentId },
-      select: ['apartmentId'],
+      select: ['id', 'apartmentId'],
     });
 
     return Array.from(

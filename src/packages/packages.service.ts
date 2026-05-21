@@ -82,7 +82,7 @@ export class PackagesService {
 
     const [links, resident] = await Promise.all([
       this.residentApartmentsRepository.find({ where: { residentId }, select: ['apartmentId'] }),
-      this.residentsRepository.findOne({ where: { id: residentId }, select: ['apartmentId'] }),
+      this.residentsRepository.findOne({ where: { id: residentId }, select: ['id', 'apartmentId'] }),
     ]);
     const apartmentIds = Array.from(new Set([
       ...links.map((l) => l.apartmentId),
