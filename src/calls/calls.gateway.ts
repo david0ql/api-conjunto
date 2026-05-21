@@ -209,15 +209,19 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.in(this.userRoom(user)).socketsJoin(this.callRoom(call.id));
 
     if (call.direction === 'outbound') {
-      // Employee (initiator) joins call room
       if (call.initiatedByEmployeeId) {
         this.server
           .in(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
           .socketsJoin(this.callRoom(call.id));
       }
-      this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
+      // Emit to specific users to avoid duplicates when one party has multiple sockets
+      this.server.to(this.userRoom(user)).emit('calls:accepted', call);
+      if (call.initiatedByEmployeeId) {
+        this.server
+          .to(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
+          .emit('calls:accepted', call);
+      }
       await this.callsPushService.sendResidentCallState(call, 'accepted');
-      // Notify other residents in the apartment
       (call.targetResidentIds ?? [])
         .filter((residentId) => residentId !== user.sub)
         .forEach((residentId) => {
@@ -226,14 +230,18 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             .emit('calls:accepted', call);
         });
     } else if (call.direction === 'inbound') {
-      // Inbound: employee (porter) accepted, notify the initiating resident
       if (call.initiatedByResidentId) {
         this.server
           .in(this.userRoom({ sub: call.initiatedByResidentId, type: 'resident' }))
           .socketsJoin(this.callRoom(call.id));
       }
-      this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
-      // Notify other porters that someone answered
+      // Emit to specific users to avoid duplicates when one party has multiple sockets
+      this.server.to(this.userRoom(user)).emit('calls:accepted', call);
+      if (call.initiatedByResidentId) {
+        this.server
+          .to(this.userRoom({ sub: call.initiatedByResidentId, type: 'resident' }))
+          .emit('calls:accepted', call);
+      }
       (call.targetEmployeeIds ?? [])
         .filter((employeeId) => employeeId !== user.sub)
         .forEach((employeeId) => {
@@ -247,7 +255,12 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           .in(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
           .socketsJoin(this.callRoom(call.id));
       }
-      this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
+      this.server.to(this.userRoom(user)).emit('calls:accepted', call);
+      if (call.initiatedByEmployeeId && call.initiatedByEmployeeId !== user.sub) {
+        this.server
+          .to(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
+          .emit('calls:accepted', call);
+      }
     }
     await this.emitPorterAvailability();
   }
