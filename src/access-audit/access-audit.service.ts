@@ -51,7 +51,19 @@ export class AccessAuditService {
 
     if (query.search) {
       const q = `%${query.search}%`;
-      qb.andWhere('(visitor.name ILIKE :q OR visitor.last_name ILIKE :q OR resident.name ILIKE :q OR resident.last_name ILIKE :q OR a.vehicle_plate ILIKE :q OR apartment.number ILIKE :q)', { q });
+      const normalizedPlate = `%${normalizePlate(query.search).replace(/\s+/g, '')}%`;
+      qb.andWhere(
+        `(
+          visitor.name ILIKE :q
+          OR visitor.last_name ILIKE :q
+          OR resident.name ILIKE :q
+          OR resident.last_name ILIKE :q
+          OR a.vehicle_plate ILIKE :q
+          OR REPLACE(COALESCE(a.vehicle_plate, ''), ' ', '') ILIKE :normalizedPlate
+          OR apartment.number ILIKE :q
+        )`,
+        { q, normalizedPlate },
+      );
     }
     if (query.type === 'visitor') {
       qb.andWhere('a.visitor_id IS NOT NULL');
