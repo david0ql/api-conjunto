@@ -30,6 +30,7 @@ import { NewsModule } from './news/news.module';
 import { CommunitySpacesModule } from './community-spaces/community-spaces.module';
 import { CallsModule } from './calls/calls.module';
 import { AssembliesModule } from './assemblies/assemblies.module';
+import { ErrorLogsModule } from './error-logs/error-logs.module';
 import { FinesModule } from './fines/fines.module';
 import { ResidentVehiclesModule } from './resident-vehicles/resident-vehicles.module';
 import { ResidentVehicle } from './resident-vehicles/entities/resident-vehicle.entity';
@@ -66,6 +67,7 @@ import { NewsCategory } from './news-categories/entities/news-category.entity';
 import { News } from './news/entities/news.entity';
 import { CommunitySpace } from './community-spaces/entities/community-space.entity';
 import { CommunitySpaceSchedule } from './community-spaces/entities/community-space-schedule.entity';
+import { ErrorLog } from './error-logs/entities/error-log.entity';
 import { CallDevice } from './calls/entities/call-device.entity';
 import { CallSession } from './calls/entities/call-session.entity';
 import { CallTraceEvent } from './calls/entities/call-trace-event.entity';
@@ -94,6 +96,7 @@ import { Fine } from './fines/entities/fine.entity';
           FineType, Fine,
           ResidentVehicle,
           Assembly, AssemblyQuestion, AssemblyVote, AssemblyResidentToken,
+          ErrorLog,
         ],
         synchronize: true,
         namingStrategy: new SnakeCaseNamingStrategy(),
@@ -130,6 +133,7 @@ import { Fine } from './fines/entities/fine.entity';
     FinesModule,
     ResidentVehiclesModule,
     AssembliesModule,
+    ErrorLogsModule,
   ],
 })
 export class AppModule {}
