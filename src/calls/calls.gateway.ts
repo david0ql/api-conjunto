@@ -536,8 +536,6 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     eventName: 'calls:ended' | 'calls:missed' | 'calls:rejected',
     call: Awaited<ReturnType<CallsService['getPayload']>>,
   ) {
-    this.server.to(this.callRoom(call.id)).emit(eventName, call);
-
     if (call.direction === 'outbound') {
       if (call.initiatedByEmployeeId) {
         this.server

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import { Package } from './entities/package.entity';
 import { PackagePhoto } from './entities/package-photo.entity';
 import { CreatePackageDto } from './dto/create-package.dto';
@@ -8,6 +8,8 @@ import { UpdatePackageDto } from './dto/update-package.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { periodToStartDate } from '../common/utils/period-filter';
+import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
+import { Resident } from '../residents/entities/resident.entity';
 
 interface PackageFilters extends PaginationQueryDto {
   search?: string;
@@ -24,6 +26,10 @@ export class PackagesService {
     private repository: Repository<Package>,
     @InjectRepository(PackagePhoto)
     private photoRepository: Repository<PackagePhoto>,
+    @InjectRepository(ResidentApartment)
+    private residentApartmentsRepository: Repository<ResidentApartment>,
+    @InjectRepository(Resident)
+    private residentsRepository: Repository<Resident>,
   ) {}
 
   async findAll(query: PackageFilters = {}): Promise<PaginatedResponse<Package>> {
@@ -73,15 +79,38 @@ export class PackagesService {
   async findByResident(residentId: string, query: PaginationQueryDto = {}): Promise<PaginatedResponse<Package>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [data, total] = await this.repository
+
+    const [links, resident] = await Promise.all([
+      this.residentApartmentsRepository.find({ where: { residentId }, select: ['apartmentId'] }),
+      this.residentsRepository.findOne({ where: { id: residentId }, select: ['apartmentId'] }),
+    ]);
+    const apartmentIds = Array.from(new Set([
+      ...links.map((l) => l.apartmentId),
+      ...(resident?.apartmentId ? [resident.apartmentId] : []),
+    ]));
+
+    const qb = this.repository
       .createQueryBuilder('pkg')
       .leftJoinAndSelect('pkg.apartment', 'apartment')
       .leftJoinAndSelect('apartment.towerData', 'towerData')
       .leftJoinAndSelect('pkg.createdByEmployee', 'createdByEmployee')
       .leftJoinAndSelect('pkg.receivedByResident', 'receivedByResident')
       .leftJoinAndSelect('pkg.deliveredByEmployee', 'deliveredByEmployee')
-      .where('pkg.resident_id = :residentId', { residentId })
-      .loadRelationCountAndMap('pkg.photoCount', 'pkg.photos')
+      .loadRelationCountAndMap('pkg.photoCount', 'pkg.photos');
+
+    if (apartmentIds.length > 0) {
+      qb.where(new Brackets((outer) => {
+        outer.where('pkg.resident_id = :residentId', { residentId })
+          .orWhere(new Brackets((inner) => {
+            inner.where('pkg.resident_id IS NULL')
+              .andWhere('pkg.apartment_id IN (:...apartmentIds)', { apartmentIds });
+          }));
+      }));
+    } else {
+      qb.where('pkg.resident_id = :residentId', { residentId });
+    }
+
+    const [data, total] = await qb
       .orderBy('pkg.arrivalTime', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)

@@ -23,20 +23,13 @@ export class AuthService {
   ) {}
 
   async loginResident(dto: ResidentLoginDto) {
-    const resident = await this.residentsRepository.findOne({
-      where: [{ email: dto.identifier }, { document: dto.identifier }],
-      relations: ['residentType'],
-      select: {
-        id: true,
-        name: true,
-        lastName: true,
-        email: true,
-        document: true,
-        isActive: true,
-        passwordHash: true,
-        residentType: { id: true, code: true, name: true },
-      },
-    });
+    const identifier = dto.identifier.trim().toLowerCase();
+    const resident = await this.residentsRepository
+      .createQueryBuilder('resident')
+      .leftJoinAndSelect('resident.residentType', 'residentType')
+      .addSelect('resident.passwordHash')
+      .where('LOWER(TRIM(resident.email)) = :identifier', { identifier })
+      .getOne();
 
     if (!resident || !resident.isActive) {
       throw new UnauthorizedException('Invalid credentials');
