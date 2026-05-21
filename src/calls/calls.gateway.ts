@@ -478,7 +478,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const timeout = setTimeout(() => {
       void this.cleanupDisconnectedUserCalls(user);
-    }, 8_000);
+    }, 30_000);
 
     this.disconnectCleanupByUserKey.set(key, timeout);
   }
