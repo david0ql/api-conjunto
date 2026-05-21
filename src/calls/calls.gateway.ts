@@ -207,6 +207,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }).catch(() => undefined);
 
     client.join(this.callRoom(call.id));
+    this.emitAnsweredElsewhereToOtherUserSockets(client, user, call);
 
     if (call.direction === 'outbound') {
       this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
@@ -551,6 +552,19 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           .emit(eventName, call);
       });
     }
+  }
+
+  private emitAnsweredElsewhereToOtherUserSockets(
+    client: SocketWithUser,
+    user: Pick<JwtPayload, 'sub' | 'type'>,
+    call: Awaited<ReturnType<CallsService['getPayload']>>,
+  ) {
+    client.to(this.userRoom(user)).emit('calls:ended', {
+      ...call,
+      status: 'ended',
+      endedReason: 'answered_elsewhere',
+      endedAt: call.endedAt ?? new Date().toISOString(),
+    });
   }
 
   private setTimeoutForCall(callId: string) {
