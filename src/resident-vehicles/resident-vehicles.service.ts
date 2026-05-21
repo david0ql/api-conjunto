@@ -31,7 +31,16 @@ export class ResidentVehiclesService {
 
     if (query.search) {
       const q = `%${query.search}%`;
-      qb.andWhere('(rv.plate ILIKE :q OR vehicleBrand.name ILIKE :q OR apartment.number ILIKE :q)', { q });
+      const normalizedPlate = `%${normalizePlate(query.search).replace(/\s+/g, '')}%`;
+      qb.andWhere(
+        `(
+          rv.plate ILIKE :q
+          OR REPLACE(COALESCE(rv.plate, ''), ' ', '') ILIKE :normalizedPlate
+          OR vehicleBrand.name ILIKE :q
+          OR apartment.number ILIKE :q
+        )`,
+        { q, normalizedPlate },
+      );
     }
     if (query.apartmentId) {
       qb.andWhere('rv.apartment_id = :apartmentId', { apartmentId: query.apartmentId });
