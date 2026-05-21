@@ -18,6 +18,12 @@ type PoolReportFilters = {
 };
 
 type PdfDocument = InstanceType<typeof PDFDocument>;
+
+function colombiaISO(date: Date): string {
+  const ms = date.getTime() + -5 * 60 * 60 * 1000;
+  return new Date(ms).toISOString();
+}
+
 const PDF_FOOTER_RESERVE = 18;
 
 @Injectable()
@@ -140,8 +146,8 @@ export class PoolEntriesService {
 
   async getSummary(filters: PoolReportFilters) {
     const entries = await this.findByDateRange(filters);
-    const today = new Date().toISOString().slice(0, 10);
-    const entriesToday = entries.filter((item) => item.entryTime.toISOString().slice(0, 10) === today);
+    const today = colombiaISO(new Date()).slice(0, 10);
+    const entriesToday = entries.filter((item) => colombiaISO(item.entryTime).slice(0, 10) === today);
     const guestsToday = entriesToday.reduce((total, item) => total + item.guestCount, 0);
     const uniqueResidents = new Set(
       entries.flatMap((item) => item.residentLinks.map((link) => link.residentId)),
@@ -162,7 +168,7 @@ export class PoolEntriesService {
     const doc = new PDFDocument({ margin: 34, size: 'A4', layout: 'landscape' });
     const chunks: Buffer[] = [];
     const rangeLabel = `${filters.dateFrom ?? 'Inicio'} a ${filters.dateTo ?? 'Hoy'}`;
-    const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 16);
+    const generatedAt = colombiaISO(new Date()).replace('T', ' ').slice(0, 16);
     doc.info.Title = `Reporte Piscina - Conjunto Reserva de la Loma - ${rangeLabel}`;
     doc.info.Author = 'Conjunto Reserva de la Loma';
     doc.info.Subject = 'Reporte confidencial de ingresos a piscina';
@@ -177,7 +183,7 @@ export class PoolEntriesService {
     for (const entry of entries) {
       const apartment = this.getApartmentLabel(entry.apartment);
       const residentName = this.getResidentNames(entry.residents);
-      const dateLabel = entry.entryTime.toISOString().replace('T', ' ').slice(0, 16);
+      const dateLabel = colombiaISO(entry.entryTime).replace('T', ' ').slice(0, 16);
       const guestNames =
         entry.guests?.map((guest) => guest.name).join(', ') || 'Sin invitados';
       const notes = entry.notes?.trim() || 'Sin notas';
