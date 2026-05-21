@@ -108,8 +108,8 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       metadata: { direction: call.direction, apartmentId: call.apartmentId },
     }).catch(() => undefined);
 
-    this.server.in(this.userRoom(user)).socketsJoin(this.callRoom(call.id));
-    this.server.to(this.userRoom(user)).emit('calls:outgoing', call);
+    client.join(this.callRoom(call.id));
+    client.emit('calls:outgoing', call);
     (call.targetResidentIds ?? []).forEach((residentId) => {
       this.server.to(this.userRoom({ sub: residentId, type: 'resident' })).emit('calls:incoming', call);
     });
@@ -141,8 +141,8 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       metadata: { direction: call.direction },
     }).catch(() => undefined);
 
-    this.server.in(this.userRoom(user)).socketsJoin(this.callRoom(call.id));
-    this.server.to(this.userRoom(user)).emit('calls:outgoing', call);
+    client.join(this.callRoom(call.id));
+    client.emit('calls:outgoing', call);
     (call.targetEmployeeIds ?? []).forEach((employeeId) => {
       this.server.to(this.userRoom({ sub: employeeId, type: 'employee' })).emit('calls:incoming', call);
     });
@@ -176,8 +176,8 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       metadata: { direction: call.direction },
     }).catch(() => undefined);
 
-    this.server.in(this.userRoom(user)).socketsJoin(this.callRoom(call.id));
-    this.server.to(this.userRoom(user)).emit('calls:outgoing', call);
+    client.join(this.callRoom(call.id));
+    client.emit('calls:outgoing', call);
     (call.targetEmployeeIds ?? []).forEach((employeeId) => {
       this.server.to(this.userRoom({ sub: employeeId, type: 'employee' })).emit('calls:incoming', call);
     });
@@ -206,21 +206,10 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       metadata: { direction: call.direction },
     }).catch(() => undefined);
 
-    this.server.in(this.userRoom(user)).socketsJoin(this.callRoom(call.id));
+    client.join(this.callRoom(call.id));
 
     if (call.direction === 'outbound') {
-      if (call.initiatedByEmployeeId) {
-        this.server
-          .in(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
-          .socketsJoin(this.callRoom(call.id));
-      }
-      // Emit to specific users to avoid duplicates when one party has multiple sockets
-      this.server.to(this.userRoom(user)).emit('calls:accepted', call);
-      if (call.initiatedByEmployeeId) {
-        this.server
-          .to(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
-          .emit('calls:accepted', call);
-      }
+      this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
       await this.callsPushService.sendResidentCallState(call, 'accepted');
       (call.targetResidentIds ?? [])
         .filter((residentId) => residentId !== user.sub)
@@ -230,18 +219,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             .emit('calls:accepted', call);
         });
     } else if (call.direction === 'inbound') {
-      if (call.initiatedByResidentId) {
-        this.server
-          .in(this.userRoom({ sub: call.initiatedByResidentId, type: 'resident' }))
-          .socketsJoin(this.callRoom(call.id));
-      }
-      // Emit to specific users to avoid duplicates when one party has multiple sockets
-      this.server.to(this.userRoom(user)).emit('calls:accepted', call);
-      if (call.initiatedByResidentId) {
-        this.server
-          .to(this.userRoom({ sub: call.initiatedByResidentId, type: 'resident' }))
-          .emit('calls:accepted', call);
-      }
+      this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
       (call.targetEmployeeIds ?? [])
         .filter((employeeId) => employeeId !== user.sub)
         .forEach((employeeId) => {
@@ -250,17 +228,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             .emit('calls:accepted', call);
         });
     } else {
-      if (call.initiatedByEmployeeId) {
-        this.server
-          .in(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
-          .socketsJoin(this.callRoom(call.id));
-      }
-      this.server.to(this.userRoom(user)).emit('calls:accepted', call);
-      if (call.initiatedByEmployeeId && call.initiatedByEmployeeId !== user.sub) {
-        this.server
-          .to(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
-          .emit('calls:accepted', call);
-      }
+      this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
     }
     await this.emitPorterAvailability();
   }
@@ -392,7 +360,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }).catch(() => undefined);
     }
 
-    this.server.to(this.userRoom(targetUser)).emit('calls:signal', {
+    client.to(this.callRoom(call.id)).emit('calls:signal', {
       callId: call.id,
       from: {
         userId: user.sub,
@@ -434,7 +402,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       },
     }).catch(() => undefined);
 
-    this.server.to(this.userRoom(targetUser)).emit('calls:request-offer', {
+    client.to(this.callRoom(call.id)).emit('calls:request-offer', {
       callId: call.id,
       requestedBy: {
         userId: user.sub,
