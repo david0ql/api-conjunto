@@ -28,8 +28,8 @@ export class RegistrationLink {
   @JoinColumn({ name: 'created_by_employee_id' })
   createdByEmployee?: Employee;
 
-  @Column({ name: 'created_by_employee_id', nullable: true })
-  createdByEmployeeId?: string;
+  @Column({ name: 'created_by_employee_id', type: 'uuid', nullable: true })
+  createdByEmployeeId?: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

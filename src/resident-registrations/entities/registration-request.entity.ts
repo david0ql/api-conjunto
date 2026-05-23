@@ -55,7 +55,7 @@ export class RegistrationRequest {
   @JoinColumn({ name: 'reviewed_by_employee_id' })
   reviewedByEmployee?: Employee;
 
-  @Column({ name: 'reviewed_by_employee_id', nullable: true })
+  @Column({ name: 'reviewed_by_employee_id', type: 'uuid', nullable: true })
   reviewedByEmployeeId?: string | null;
 
   @Column({ name: 'reviewed_at', type: 'timestamptz', nullable: true })

@@ -19,10 +19,10 @@ export class RegistrationRequestVehicle {
   @Column({ name: 'brand_name', length: 60 })
   brandName: string;
 
-  @Column({ length: 60, nullable: true })
+  @Column({ type: 'varchar', length: 60, nullable: true })
   model?: string | null;
 
-  @Column({ length: 40, nullable: true })
+  @Column({ type: 'varchar', length: 40, nullable: true })
   color?: string | null;
 
   @Column({ length: 15 })

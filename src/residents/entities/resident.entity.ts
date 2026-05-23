@@ -16,10 +16,10 @@ export class Resident {
   @Column({ length: 50, unique: true })
   document: string;
 
-  @Column({ length: 20, nullable: true })
+  @Column({ type: 'varchar', length: 20, nullable: true })
   phone: string;
 
-  @Column({ length: 100, unique: true, nullable: true })
+  @Column({ type: 'varchar', length: 100, unique: true, nullable: true })
   email: string;
 
   @Column({ name: 'password_hash', type: 'text', select: false })
@@ -45,7 +45,7 @@ export class Resident {
   @JoinColumn({ name: 'apartment_id' })
   apartment: Apartment;
 
-  @Column({ name: 'apartment_id', nullable: true })
+  @Column({ name: 'apartment_id', type: 'uuid', nullable: true })
   apartmentId: string;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

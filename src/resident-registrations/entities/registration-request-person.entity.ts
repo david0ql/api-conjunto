@@ -25,13 +25,13 @@ export class RegistrationRequestPerson {
   @Column({ length: 50 })
   document: string;
 
-  @Column({ length: 20, nullable: true })
+  @Column({ type: 'varchar', length: 20, nullable: true })
   phone?: string | null;
 
-  @Column({ length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   email?: string | null;
 
-  @Column({ name: 'birth_date', length: 10, nullable: true })
+  @Column({ name: 'birth_date', type: 'date', nullable: true })
   birthDate?: string | null;
 
   @Column({ name: 'is_owner', default: false })
