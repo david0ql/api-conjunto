@@ -34,6 +34,11 @@ import { ErrorLogsModule } from './error-logs/error-logs.module';
 import { FinesModule } from './fines/fines.module';
 import { ResidentVehiclesModule } from './resident-vehicles/resident-vehicles.module';
 import { ResidentVehicle } from './resident-vehicles/entities/resident-vehicle.entity';
+import { ResidentRegistrationsModule } from './resident-registrations/resident-registrations.module';
+import { RegistrationLink } from './resident-registrations/entities/registration-link.entity';
+import { RegistrationRequest } from './resident-registrations/entities/registration-request.entity';
+import { RegistrationRequestPerson } from './resident-registrations/entities/registration-request-person.entity';
+import { RegistrationRequestVehicle } from './resident-registrations/entities/registration-request-vehicle.entity';
 import { Assembly } from './assemblies/entities/assembly.entity';
 import { AssemblyQuestion } from './assemblies/entities/assembly-question.entity';
 import { AssemblyVote } from './assemblies/entities/assembly-vote.entity';
@@ -97,6 +102,7 @@ import { Fine } from './fines/entities/fine.entity';
           ResidentVehicle,
           Assembly, AssemblyQuestion, AssemblyVote, AssemblyResidentToken,
           ErrorLog,
+          RegistrationLink, RegistrationRequest, RegistrationRequestPerson, RegistrationRequestVehicle,
         ],
         synchronize: true,
         namingStrategy: new SnakeCaseNamingStrategy(),
@@ -134,6 +140,7 @@ import { Fine } from './fines/entities/fine.entity';
     ResidentVehiclesModule,
     AssembliesModule,
     ErrorLogsModule,
+    ResidentRegistrationsModule,
   ],
 })
 export class AppModule {}

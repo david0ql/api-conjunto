@@ -32,6 +32,12 @@ export class Resident {
   @Column({ name: 'resident_type_id' })
   residentTypeId: string;
 
+  @Column({ name: 'birth_date', type: 'date', nullable: true })
+  birthDate?: string | null;
+
+  @Column({ name: 'photo_path', type: 'text', nullable: true })
+  photoPath?: string | null;
+
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
