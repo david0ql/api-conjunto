@@ -27,6 +27,9 @@ export interface FrequentVisitorEntry {
   visitorId: string;
   visitor: Visitor;
   vehiclePlate: string | null;
+  vehicleBrandId: string | null;
+  vehicleColor: string | null;
+  vehicleModel: string | null;
   entryType: string;
   visits: number;
   lastSeen: string;
@@ -277,6 +280,9 @@ export class AccessAuditService {
     const rows: Array<{
       visitor_id: string;
       vehicle_plate: string | null;
+      vehicle_brand_id: string | null;
+      vehicle_color: string | null;
+      vehicle_model: string | null;
       entry_type: string;
       visits: string;
       last_seen: string;
@@ -284,6 +290,9 @@ export class AccessAuditService {
       .createQueryBuilder('a')
       .select('a.visitor_id', 'visitor_id')
       .addSelect('a.vehicle_plate', 'vehicle_plate')
+      .addSelect('MAX(a.vehicle_brand_id)', 'vehicle_brand_id')
+      .addSelect('MAX(a.vehicle_color)', 'vehicle_color')
+      .addSelect('MAX(a.vehicle_model)', 'vehicle_model')
       .addSelect('a.entry_type', 'entry_type')
       .addSelect('COUNT(*)', 'visits')
       .addSelect('MAX(a.entry_time)', 'last_seen')
@@ -310,6 +319,9 @@ export class AccessAuditService {
           visitorId: r.visitor_id,
           visitor,
           vehiclePlate: r.vehicle_plate,
+          vehicleBrandId: r.vehicle_brand_id,
+          vehicleColor: r.vehicle_color,
+          vehicleModel: r.vehicle_model,
           entryType: r.entry_type,
           visits: parseInt(r.visits, 10),
           lastSeen: r.last_seen,
