@@ -290,7 +290,7 @@ export class AccessAuditService {
       .createQueryBuilder('a')
       .select('a.visitor_id', 'visitor_id')
       .addSelect('a.vehicle_plate', 'vehicle_plate')
-      .addSelect('MAX(a.vehicle_brand_id)', 'vehicle_brand_id')
+      .addSelect('MAX(CAST(a.vehicle_brand_id AS TEXT))', 'vehicle_brand_id')
       .addSelect('MAX(a.vehicle_color)', 'vehicle_color')
       .addSelect('MAX(a.vehicle_model)', 'vehicle_model')
       .addSelect('a.entry_type', 'entry_type')

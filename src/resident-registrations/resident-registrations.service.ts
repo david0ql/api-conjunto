@@ -228,14 +228,12 @@ export class ResidentRegistrationsService {
     const results: Array<{ name: string; document: string; password: string }> = [];
 
     // Find owner and tenant resident type IDs
-    const ownerType = await this.residentTypesRepo.findOne({ where: { code: 'owner' } })
-      ?? await this.residentTypesRepo.findOne({ where: { name: 'Propietario' } });
-    const tenantType = await this.residentTypesRepo.findOne({ where: { code: 'tenant' } })
-      ?? await this.residentTypesRepo.findOne({ where: { name: 'Arrendatario' } });
+    const allTypes = await this.residentTypesRepo.find({ order: { name: 'ASC' } });
+    if (!allTypes.length) throw new BadRequestException('No hay tipos de residente configurados');
 
-    // Fallback to first available type
-    const defaultType = await this.residentTypesRepo.findOne({ order: { name: 'ASC' } });
-    if (!defaultType) throw new BadRequestException('No hay tipos de residente configurados');
+    const ownerType = allTypes.find((t) => t.code === 'owner') ?? allTypes.find((t) => t.name?.toLowerCase().includes('propietario'));
+    const tenantType = allTypes.find((t) => t.code === 'tenant') ?? allTypes.find((t) => t.name?.toLowerCase().includes('arrendatario'));
+    const defaultType = allTypes[0];
 
     const ownerTypeId = ownerType?.id ?? defaultType.id;
     const tenantTypeId = tenantType?.id ?? defaultType.id;
