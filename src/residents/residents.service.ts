@@ -136,8 +136,19 @@ export class ResidentsService {
   }
 
   async remove(id: string): Promise<void> {
-    const item = await this.findOne(id);
-    await this.repository.remove(item);
+    await this.findOne(id);
+    // Clean up non-nullable FK references before deleting
+    await this.repository.query('DELETE FROM resident_apartments WHERE resident_id = $1', [id]);
+    await this.repository.query('DELETE FROM reservations WHERE resident_id = $1', [id]);
+    await this.repository.query('DELETE FROM assembly_votes WHERE resident_id = $1', [id]);
+    await this.repository.query('DELETE FROM assembly_resident_tokens WHERE resident_id = $1', [id]);
+    // Nullify nullable FK references
+    await this.repository.query('UPDATE access_audit SET resident_id = NULL WHERE resident_id = $1', [id]);
+    await this.repository.query('UPDATE fines SET resident_id = NULL WHERE resident_id = $1', [id]);
+    await this.repository.query('UPDATE packages SET resident_id = NULL WHERE resident_id = $1', [id]);
+    await this.repository.query('UPDATE call_sessions SET initiated_by_resident_id = NULL WHERE initiated_by_resident_id = $1', [id]);
+    await this.repository.query('UPDATE call_sessions SET accepted_by_resident_id = NULL WHERE accepted_by_resident_id = $1', [id]);
+    await this.repository.query('DELETE FROM residents WHERE id = $1', [id]);
   }
 
   async deactivate(id: string): Promise<Resident> {
