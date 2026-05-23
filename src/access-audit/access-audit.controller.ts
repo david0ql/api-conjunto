@@ -48,10 +48,12 @@ export class AccessAuditController {
     @Query('type') type?: string,
     @Query('entryType') entryType?: string,
     @Query('entryTime') entryTime?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
     @Query('towerId') towerId?: string,
     @Query('apartmentId') apartmentId?: string,
   ) {
-    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, type, entryType, entryTime, towerId, apartmentId });
+    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, type, entryType, entryTime, dateFrom, dateTo, towerId, apartmentId });
   }
 
   @Get('my')
@@ -72,6 +74,27 @@ export class AccessAuditController {
   @UseGuards(EmployeeGuard)
   searchByPlate(@Query('plate') plate?: string) {
     return this.service.searchByPlate(plate?.trim() ?? '');
+  }
+
+  @Get('frequent-visitors')
+  @UseGuards(EmployeeGuard)
+  frequentVisitors(
+    @Query('apartmentId') apartmentId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.service.findFrequentVisitors(apartmentId ?? '', limit ? +limit : 5);
+  }
+
+  @Get('visitor/:visitorId/plates')
+  @UseGuards(EmployeeGuard)
+  findPlatesByVisitor(@Param('visitorId') visitorId: string) {
+    return this.service.findPlatesByVisitor(visitorId);
+  }
+
+  @Patch(':id/plate')
+  @UseGuards(EmployeeGuard)
+  updatePlate(@Param('id') id: string, @Body('vehiclePlate') vehiclePlate: string) {
+    return this.service.updatePlate(id, vehiclePlate);
   }
 
   @Get(':id')

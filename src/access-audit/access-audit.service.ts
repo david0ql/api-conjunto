@@ -17,8 +17,26 @@ interface AccessFilters extends PaginationQueryDto {
   type?: string;
   entryType?: string;
   entryTime?: string;
+  dateFrom?: string;
+  dateTo?: string;
   towerId?: string;
   apartmentId?: string;
+}
+
+export interface FrequentVisitorEntry {
+  visitorId: string;
+  visitor: Visitor;
+  vehiclePlate: string | null;
+  entryType: string;
+  visits: number;
+  lastSeen: string;
+}
+
+export interface VisitorPlateEntry {
+  vehiclePlate: string;
+  times: number;
+  firstSeen: string;
+  lastAccessId: string;
 }
 
 type PlateSearchResult =
@@ -76,6 +94,12 @@ export class AccessAuditService {
     if (query.entryTime) {
       const startDate = periodToStartDate(query.entryTime);
       if (startDate) qb.andWhere('a.entry_time >= :startDate', { startDate });
+    }
+    if (query.dateFrom) {
+      qb.andWhere('a.entry_time >= :dateFrom', { dateFrom: new Date(query.dateFrom) });
+    }
+    if (query.dateTo) {
+      qb.andWhere('a.entry_time <= :dateTo', { dateTo: new Date(query.dateTo) });
     }
     if (query.towerId) {
       qb.andWhere('apartment.tower_id = :towerId', { towerId: query.towerId });
@@ -218,6 +242,80 @@ export class AccessAuditService {
       relations: ['resident', 'visitor', 'vehicle', 'vehicleBrand', 'apartment', 'authorizedByEmployee'],
       order: { entryTime: 'DESC' },
     });
+  }
+
+  async findPlatesByVisitor(visitorId: string): Promise<VisitorPlateEntry[]> {
+    const rows: Array<{ vehicle_plate: string; times: string; first_seen: string; last_access_id: string }> =
+      await this.repository
+        .createQueryBuilder('a')
+        .select('a.vehicle_plate', 'vehicle_plate')
+        .addSelect('COUNT(*)', 'times')
+        .addSelect('MIN(a.entry_time)', 'first_seen')
+        .addSelect('(SELECT a2.id FROM access_audit a2 WHERE a2.visitor_id = :vid AND a2.vehicle_plate = a.vehicle_plate ORDER BY a2.entry_time DESC LIMIT 1)', 'last_access_id')
+        .where('a.visitor_id = :vid', { vid: visitorId })
+        .andWhere('a.vehicle_plate IS NOT NULL')
+        .groupBy('a.vehicle_plate')
+        .orderBy('times', 'DESC')
+        .setParameter('vid', visitorId)
+        .getRawMany();
+
+    return rows.map((r) => ({
+      vehiclePlate: r.vehicle_plate,
+      times: parseInt(r.times, 10),
+      firstSeen: r.first_seen,
+      lastAccessId: r.last_access_id,
+    }));
+  }
+
+  async updatePlate(id: string, vehiclePlate: string): Promise<AccessAudit> {
+    const item = await this.findOne(id);
+    item.vehiclePlate = normalizePlate(vehiclePlate) || null;
+    return this.repository.save(item);
+  }
+
+  async findFrequentVisitors(apartmentId: string, limit = 5): Promise<FrequentVisitorEntry[]> {
+    const rows: Array<{
+      visitor_id: string;
+      vehicle_plate: string | null;
+      entry_type: string;
+      visits: string;
+      last_seen: string;
+    }> = await this.repository
+      .createQueryBuilder('a')
+      .select('a.visitor_id', 'visitor_id')
+      .addSelect('a.vehicle_plate', 'vehicle_plate')
+      .addSelect('a.entry_type', 'entry_type')
+      .addSelect('COUNT(*)', 'visits')
+      .addSelect('MAX(a.entry_time)', 'last_seen')
+      .where('a.apartment_id = :apartmentId', { apartmentId })
+      .andWhere('a.visitor_id IS NOT NULL')
+      .groupBy('a.visitor_id')
+      .addGroupBy('a.vehicle_plate')
+      .addGroupBy('a.entry_type')
+      .orderBy('visits', 'DESC')
+      .limit(limit)
+      .getRawMany();
+
+    if (!rows.length) return [];
+
+    const visitorIds = [...new Set(rows.map((r) => r.visitor_id))];
+    const visitors = await this.visitorsRepository.findByIds(visitorIds);
+    const visitorMap = new Map(visitors.map((v) => [v.id, v]));
+
+    return rows
+      .map((r) => {
+        const visitor = visitorMap.get(r.visitor_id);
+        if (!visitor) return null;
+        return {
+          visitorId: r.visitor_id,
+          visitor,
+          vehiclePlate: r.vehicle_plate,
+          entryType: r.entry_type,
+          visits: parseInt(r.visits, 10),
+          lastSeen: r.last_seen,
+        };
+      })
+      .filter((x): x is FrequentVisitorEntry => x !== null);
   }
 
   async remove(id: string): Promise<void> {
