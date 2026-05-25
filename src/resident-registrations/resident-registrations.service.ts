@@ -38,6 +38,10 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 @Injectable()
 export class ResidentRegistrationsService {
   constructor(
@@ -184,6 +188,8 @@ export class ResidentRegistrationsService {
       }
     }
 
+    this.validateSubmittedRequest(dto);
+
     const request = this.requestsRepo.create({
       linkId: link.id,
       towerId: dto.towerId,
@@ -207,6 +213,70 @@ export class ResidentRegistrationsService {
     }
 
     return this.findOneRequest(saved.id);
+  }
+
+  private validateSubmittedRequest(dto: {
+    towerId: string;
+    apartmentId: string;
+    persons: Array<{
+      name: string;
+      lastName: string;
+      document: string;
+      phone?: string;
+      email?: string;
+      birthDate?: string;
+      isOwner: boolean;
+      photoPath?: string;
+    }>;
+    vehicles?: Array<{
+      vehicleType: string;
+      brandName: string;
+      model?: string;
+      color?: string;
+      plate: string;
+    }>;
+    receiptPhotoPath?: string;
+  }) {
+    if (!dto.towerId?.trim() || !dto.apartmentId?.trim()) {
+      throw new BadRequestException('Debes seleccionar torre y apartamento');
+    }
+
+    if (!dto.receiptPhotoPath?.trim()) {
+      throw new BadRequestException('Debes adjuntar la foto del recibo de administración');
+    }
+
+    if (!dto.persons.length || !dto.persons.some((person) => person.isOwner)) {
+      throw new BadRequestException('Debes registrar al menos un propietario');
+    }
+
+    const incompletePersonIndex = dto.persons.findIndex((person) =>
+      !person.name?.trim() ||
+      !person.lastName?.trim() ||
+      !person.document?.trim() ||
+      !person.phone?.trim() ||
+      !person.email?.trim() ||
+      !isValidEmail(person.email) ||
+      !person.birthDate?.trim() ||
+      !person.photoPath?.trim(),
+    );
+    if (incompletePersonIndex >= 0) {
+      throw new BadRequestException(
+        `Completa todos los datos del residente ${incompletePersonIndex + 1}`,
+      );
+    }
+
+    const incompleteVehicleIndex = (dto.vehicles ?? []).findIndex((vehicle) =>
+      !vehicle.vehicleType?.trim() ||
+      !vehicle.brandName?.trim() ||
+      !vehicle.plate?.trim() ||
+      !vehicle.model?.trim() ||
+      !vehicle.color?.trim(),
+    );
+    if (incompleteVehicleIndex >= 0) {
+      throw new BadRequestException(
+        `Completa todos los datos del vehículo ${incompleteVehicleIndex + 1}`,
+      );
+    }
   }
 
   async rejectRequest(id: string, rejectionReason: string, employeeId: string): Promise<RegistrationRequest> {
