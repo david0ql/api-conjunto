@@ -101,6 +101,7 @@ export class ResidentRegistrationsService {
     const towers = await this.towersRepo.find({ order: { code: 'ASC' } });
     const apartments = await this.apartmentsRepo.find({ order: { number: 'ASC' } });
     const residentTypes = await this.residentTypesRepo.find({ order: { name: 'ASC' } });
+    const vehicleBrands = await this.vehicleBrandsRepo.find({ order: { name: 'ASC' } });
 
     return {
       label: link.label,
@@ -110,6 +111,7 @@ export class ResidentRegistrationsService {
       towers,
       apartments,
       residentTypes,
+      vehicleBrands,
     };
   }
 
