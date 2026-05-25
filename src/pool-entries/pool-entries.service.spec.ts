@@ -6,6 +6,7 @@ import { PoolEntryGuest } from './entities/pool-entry-guest.entity';
 import { PoolEntryResident } from './entities/pool-entry-resident.entity';
 import { Apartment } from '../apartments/entities/apartment.entity';
 import { Resident } from '../residents/entities/resident.entity';
+import { Visitor } from '../visitors/entities/visitor.entity';
 
 const makeRepo = (items: unknown[], total?: number) => ({
   findAndCount: jest.fn().mockResolvedValue([items, total ?? items.length]),
@@ -33,6 +34,7 @@ describe('PoolEntriesService.findAll', () => {
         { provide: getRepositoryToken(PoolEntryResident), useValue: makeRepo([]) },
         { provide: getRepositoryToken(Apartment), useValue: makeRepo([]) },
         { provide: getRepositoryToken(Resident), useValue: makeRepo([]) },
+        { provide: getRepositoryToken(Visitor), useValue: makeRepo([]) },
       ],
     }).compile();
     service = moduleRef.get(PoolEntriesService);

@@ -9,6 +9,7 @@ import { CreatePoolEntryDto } from './dto/create-pool-entry.dto';
 import { UpdatePoolEntryDto } from './dto/update-pool-entry.dto';
 import { Apartment } from '../apartments/entities/apartment.entity';
 import { Resident } from '../residents/entities/resident.entity';
+import { Visitor } from '../visitors/entities/visitor.entity';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 
@@ -39,13 +40,15 @@ export class PoolEntriesService {
     private apartmentsRepository: Repository<Apartment>,
     @InjectRepository(Resident)
     private residentsRepository: Repository<Resident>,
+    @InjectRepository(Visitor)
+    private visitorsRepository: Repository<Visitor>,
   ) {}
 
   async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<PoolEntry>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
     const [entries, total] = await this.repository.findAndCount({
-      relations: ['apartment', 'residentLinks', 'residentLinks.resident', 'createdByEmployee', 'guests'],
+      relations: ['apartment', 'residentLinks', 'residentLinks.resident', 'createdByEmployee', 'guests', 'guests.visitor'],
       order: { entryTime: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -57,7 +60,7 @@ export class PoolEntriesService {
   async findOne(id: string): Promise<PoolEntry> {
     const item = await this.repository.findOne({
       where: { id },
-      relations: ['apartment', 'residentLinks', 'residentLinks.resident', 'createdByEmployee', 'guests'],
+      relations: ['apartment', 'residentLinks', 'residentLinks.resident', 'createdByEmployee', 'guests', 'guests.visitor'],
     });
     if (!item) throw new NotFoundException(`PoolEntry #${id} not found`);
     return this.attachResidents(item);
@@ -65,13 +68,19 @@ export class PoolEntriesService {
 
   async create(dto: CreatePoolEntryDto): Promise<PoolEntry> {
     const guestNames = this.normalizeGuestNames(dto.guestNames);
+    const guestVisitors = await this.resolveGuestVisitors(dto.guestDocuments);
     const residentIds = await this.validateResidentSelection(dto.apartmentId, dto.residentIds);
     const item = this.repository.create({
       apartmentId: dto.apartmentId,
       createdByEmployeeId: dto.createdByEmployeeId,
       notes: dto.notes,
-      guestCount: guestNames.length,
-      guests: guestNames.map((name) => this.guestsRepository.create({ name })),
+      guestCount: guestVisitors.length || guestNames.length,
+      guests: guestVisitors.length > 0
+        ? guestVisitors.map((visitor) => this.guestsRepository.create({
+            name: this.getVisitorName(visitor),
+            visitorId: visitor.id,
+          }))
+        : guestNames.map((name) => this.guestsRepository.create({ name })),
       residentLinks: residentIds.map((residentId) =>
         this.residentLinksRepository.create({ residentId }),
       ),
@@ -83,6 +92,7 @@ export class PoolEntriesService {
   async update(id: string, dto: UpdatePoolEntryDto): Promise<PoolEntry> {
     const item = await this.findOne(id);
     const guestNames = this.normalizeGuestNames(dto.guestNames);
+    const guestVisitors = await this.resolveGuestVisitors(dto.guestDocuments);
     const nextApartmentId = dto.apartmentId ?? item.apartmentId;
     const nextResidentIds = dto.residentIds ?? item.residentLinks.map((link) => link.residentId);
 
@@ -97,12 +107,20 @@ export class PoolEntriesService {
 
     item.notes = dto.notes ?? item.notes;
 
-    if (dto.guestNames !== undefined) {
+    if (dto.guestDocuments !== undefined || dto.guestNames !== undefined) {
       await this.guestsRepository.delete({ poolEntryId: id });
-      item.guests = guestNames.map((name) =>
-        this.guestsRepository.create({ poolEntryId: id, name }),
-      );
-      item.guestCount = guestNames.length;
+      item.guests = guestVisitors.length > 0
+        ? guestVisitors.map((visitor) =>
+            this.guestsRepository.create({
+              poolEntryId: id,
+              name: this.getVisitorName(visitor),
+              visitorId: visitor.id,
+            }),
+          )
+        : guestNames.map((name) =>
+            this.guestsRepository.create({ poolEntryId: id, name }),
+          );
+      item.guestCount = item.guests.length;
     }
 
     await this.repository.save(item);
@@ -216,6 +234,7 @@ export class PoolEntriesService {
       .leftJoinAndSelect('resident_links.resident', 'resident')
       .leftJoinAndSelect('entry.createdByEmployee', 'employee')
       .leftJoinAndSelect('entry.guests', 'guests')
+      .leftJoinAndSelect('guests.visitor', 'guestVisitor')
       .orderBy('entry.entryTime', 'DESC');
 
     if (filters.dateFrom) {
@@ -234,6 +253,40 @@ export class PoolEntriesService {
     return (guestNames ?? [])
       .map((name) => name.trim())
       .filter(Boolean);
+  }
+
+  private normalizeGuestDocuments(guestDocuments?: string[]) {
+    return [...new Set((guestDocuments ?? [])
+      .map((document) => document.trim())
+      .filter(Boolean))];
+  }
+
+  private async resolveGuestVisitors(guestDocuments?: string[]) {
+    const documents = this.normalizeGuestDocuments(guestDocuments);
+    if (documents.length === 0) {
+      return [];
+    }
+
+    const visitors = await this.visitorsRepository.find({
+      where: { document: In(documents) },
+    });
+    const visitorsByDocument = new Map(
+      visitors
+        .filter((visitor) => visitor.document?.trim())
+        .map((visitor) => [visitor.document.trim(), visitor]),
+    );
+    const missingDocuments = documents.filter((document) => !visitorsByDocument.has(document));
+    if (missingDocuments.length > 0) {
+      throw new BadRequestException(
+        `Los siguientes visitantes no están registrados: ${missingDocuments.join(', ')}`,
+      );
+    }
+
+    return documents.map((document) => visitorsByDocument.get(document)!);
+  }
+
+  private getVisitorName(visitor: Visitor) {
+    return `${visitor.name} ${visitor.lastName}`.trim();
   }
 
   private attachResidents(entry: PoolEntry) {

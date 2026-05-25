@@ -7,9 +7,10 @@ import { PoolEntryGuest } from './entities/pool-entry-guest.entity';
 import { PoolEntryResident } from './entities/pool-entry-resident.entity';
 import { Apartment } from '../apartments/entities/apartment.entity';
 import { Resident } from '../residents/entities/resident.entity';
+import { Visitor } from '../visitors/entities/visitor.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([PoolEntry, PoolEntryGuest, PoolEntryResident, Apartment, Resident])],
+  imports: [TypeOrmModule.forFeature([PoolEntry, PoolEntryGuest, PoolEntryResident, Apartment, Resident, Visitor])],
   controllers: [PoolEntriesController],
   providers: [PoolEntriesService],
   exports: [PoolEntriesService],

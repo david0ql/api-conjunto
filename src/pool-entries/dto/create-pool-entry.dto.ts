@@ -34,4 +34,11 @@ export class CreatePoolEntryDto {
   @ArrayMaxSize(10)
   @IsOptional()
   guestNames?: string[];
+
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  @ArrayMaxSize(10)
+  @IsOptional()
+  guestDocuments?: string[];
 }
