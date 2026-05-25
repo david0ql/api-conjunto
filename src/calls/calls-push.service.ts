@@ -65,6 +65,8 @@ export class CallsPushService {
       throw new Error('Solo iOS puede registrar tokens VoIP');
     }
 
+    await this.deactivateDeviceRegistrationsForOtherUsers(user, input.deviceId);
+
     const existing = await this.callDevicesRepository.findOne({ where: { token } });
     const device = existing ?? this.callDevicesRepository.create();
     device.userId = user.sub;
@@ -79,6 +81,28 @@ export class CallsPushService {
     device.lastSeenAt = new Date();
     device.lastError = null;
     await this.callDevicesRepository.save(device);
+  }
+
+  private async deactivateDeviceRegistrationsForOtherUsers(user: JwtPayload, deviceId?: string | null) {
+    const normalizedDeviceId = deviceId?.trim();
+    if (!normalizedDeviceId) {
+      return;
+    }
+
+    await this.callDevicesRepository
+      .createQueryBuilder()
+      .update(CallDevice)
+      .set({
+        isActive: false,
+        lastSeenAt: new Date(),
+      })
+      .where('device_id = :deviceId', { deviceId: normalizedDeviceId })
+      .andWhere('is_active = true')
+      .andWhere('NOT (user_id = :userId AND user_type = :userType)', {
+        userId: user.sub,
+        userType: user.type,
+      })
+      .execute();
   }
 
   async unregisterDevice(user: JwtPayload, input: UnregisterCallDeviceInput = {}) {
