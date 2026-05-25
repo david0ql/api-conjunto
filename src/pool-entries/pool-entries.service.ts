@@ -324,6 +324,16 @@ export class PoolEntriesService {
       );
     }
 
+    const inactiveResidents = residents.filter((resident) => !resident.isActive);
+    if (inactiveResidents.length > 0) {
+      const names = inactiveResidents
+        .map((resident) => `${resident.name} ${resident.lastName}`.trim())
+        .join(', ');
+      throw new BadRequestException(
+        `El residente ${names} no tiene acceso a la piscina. Debe comunicarse con el área administrativa.`,
+      );
+    }
+
     return normalizedResidentIds;
   }
 
