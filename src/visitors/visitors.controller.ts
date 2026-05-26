@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { EmployeeGuard } from '../common/guards/employee.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { AdminOrPorterGuard } from '../common/guards/admin-or-porter.guard';
+import { OperationsEmployeeGuard } from '../common/guards/operations-employee.guard';
 import { VisitorsService } from './visitors.service';
 import { CreateVisitorDto } from './dto/create-visitor.dto';
 import { UpdateVisitorDto } from './dto/update-visitor.dto';
@@ -44,7 +45,7 @@ export class VisitorsController {
   }
 
   @Get('search')
-  @UseGuards(EmployeeGuard)
+  @UseGuards(OperationsEmployeeGuard)
   findByDocument(@Query('document') document?: string) {
     const normalizedDocument = document?.trim();
     if (!normalizedDocument) {
