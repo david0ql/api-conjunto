@@ -10,8 +10,8 @@ import { UpdatePoolEntryDto } from './dto/update-pool-entry.dto';
 import { Apartment } from '../apartments/entities/apartment.entity';
 import { Resident } from '../residents/entities/resident.entity';
 import { Visitor } from '../visitors/entities/visitor.entity';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { PoolEntriesQueryDto } from './dto/pool-entries-query.dto';
 
 type PoolReportFilters = {
   dateFrom?: string;
@@ -44,15 +44,31 @@ export class PoolEntriesService {
     private visitorsRepository: Repository<Visitor>,
   ) {}
 
-  async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<PoolEntry>> {
+  async findAll(query: PoolEntriesQueryDto = {}): Promise<PaginatedResponse<PoolEntry>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [entries, total] = await this.repository.findAndCount({
-      relations: ['apartment', 'residentLinks', 'residentLinks.resident', 'createdByEmployee', 'guests', 'guests.visitor'],
-      order: { entryTime: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+
+    const qb = this.repository.createQueryBuilder('entry')
+      .leftJoinAndSelect('entry.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'tower')
+      .leftJoinAndSelect('entry.residentLinks', 'resident_links')
+      .leftJoinAndSelect('resident_links.resident', 'resident')
+      .leftJoinAndSelect('entry.createdByEmployee', 'employee')
+      .leftJoinAndSelect('entry.guests', 'guests')
+      .leftJoinAndSelect('guests.visitor', 'guestVisitor')
+      .orderBy('entry.entryTime', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (query.towerId) {
+      qb.andWhere('apartment.towerId = :towerId', { towerId: query.towerId });
+    }
+
+    if (query.apartmentId) {
+      qb.andWhere('entry.apartmentId = :apartmentId', { apartmentId: query.apartmentId });
+    }
+
+    const [entries, total] = await qb.getManyAndCount();
     const data = entries.map((entry) => this.attachResidents(entry));
     return paginate(data, total, page, limit);
   }

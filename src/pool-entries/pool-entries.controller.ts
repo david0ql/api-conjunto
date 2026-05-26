@@ -19,7 +19,7 @@ import type { Response } from 'express';
 import { PoolEntriesService } from './pool-entries.service';
 import { CreatePoolEntryDto } from './dto/create-pool-entry.dto';
 import { UpdatePoolEntryDto } from './dto/update-pool-entry.dto';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PoolEntriesQueryDto } from './dto/pool-entries-query.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('pool-entries')
@@ -28,8 +28,8 @@ export class PoolEntriesController {
 
   @Get()
   @UseGuards(PoolOperatorGuard)
-  findAll(@Query() pagination: PaginationQueryDto) {
-    return this.service.findAll(pagination);
+  findAll(@Query() query: PoolEntriesQueryDto) {
+    return this.service.findAll(query);
   }
 
   @Get('resident-search')
