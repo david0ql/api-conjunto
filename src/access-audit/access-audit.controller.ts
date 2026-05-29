@@ -26,7 +26,6 @@ import { CreateAccessAuditDto } from './dto/create-access-audit.dto';
 import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
 import { EmployeeOrResidentGuard } from '../common/guards/employee-or-resident.guard';
 import { ResidentsService } from '../residents/residents.service';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 const UPLOAD_DIR = 'uploads/visitor-access';
 mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -74,6 +73,12 @@ export class AccessAuditController {
   @UseGuards(EmployeeGuard)
   searchByPlate(@Query('plate') plate?: string) {
     return this.service.searchByPlate(plate?.trim() ?? '');
+  }
+
+  @Get('locate-plate')
+  @UseGuards(EmployeeGuard)
+  locatePlate(@Query('plate') plate?: string) {
+    return this.service.locatePlate(plate?.trim() ?? '');
   }
 
   @Get('frequent-visitors')

@@ -47,6 +47,14 @@ type PlateSearchResult =
   | { kind: 'visitor'; plate: string; lastAccess: AccessAudit }
   | { kind: 'not_found'; plate: string };
 
+type PlateLocationResult = {
+  plate: string;
+  matches: Array<
+    | { kind: 'resident_vehicle'; vehicle: ResidentVehicle; residents: Resident[] }
+    | { kind: 'visitor'; lastAccess: AccessAudit }
+  >;
+};
+
 @Injectable()
 export class AccessAuditService {
   constructor(
@@ -130,7 +138,7 @@ export class AccessAuditService {
         .select('COUNT(DISTINCT a.visitor_id)', 'cnt')
         .where('a.entry_time BETWEEN :start AND :end', { start: todayStart, end: todayEnd })
         .andWhere('a.visitor_id IS NOT NULL')
-        .getRawOne()
+        .getRawOne<{ cnt?: string }>()
         .then((r) => parseInt(r?.cnt ?? '0', 10)),
     ]);
 
@@ -178,6 +186,42 @@ export class AccessAuditService {
 
     if (lastAccess) return { kind: 'visitor', plate: normalized, lastAccess };
     return { kind: 'not_found', plate: normalized };
+  }
+
+  async locatePlate(plate: string): Promise<PlateLocationResult> {
+    const normalized = normalizePlate(plate);
+    if (!normalized) return { plate: normalized, matches: [] };
+
+    const matches: PlateLocationResult['matches'] = [];
+
+    const residentVehicle = await this.residentVehiclesRepository.findOne({
+      where: { plate: normalized },
+      relations: ['apartment', 'apartment.towerData', 'vehicleBrand'],
+    });
+
+    if (residentVehicle) {
+      const residents = await this.repository.manager.find(Resident, {
+        where: { apartmentId: residentVehicle.apartmentId, isActive: true },
+        relations: ['apartment', 'apartment.towerData', 'residentType'],
+        order: { createdAt: 'DESC' },
+      });
+      matches.push({ kind: 'resident_vehicle', vehicle: residentVehicle, residents });
+    }
+
+    const lastAccess = await this.repository
+      .createQueryBuilder('a')
+      .leftJoinAndSelect('a.visitor', 'visitor')
+      .leftJoinAndSelect('a.vehicleBrand', 'vehicleBrand')
+      .leftJoinAndSelect('a.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData')
+      .where('a.vehicle_plate = :plate', { plate: normalized })
+      .andWhere('a.visitor_id IS NOT NULL')
+      .orderBy('a.entryTime', 'DESC')
+      .getOne();
+
+    if (lastAccess) matches.push({ kind: 'visitor', lastAccess });
+
+    return { plate: normalized, matches };
   }
 
   async create(dto: CreateAccessAuditDto, options: { visitorPhotoWasUploaded?: boolean } = {}): Promise<AccessAudit> {
