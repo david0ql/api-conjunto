@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { Resident } from '../../residents/entities/resident.entity';
 import { Employee } from '../../employees/entities/employee.entity';
 import { Apartment } from '../../apartments/entities/apartment.entity';
@@ -26,9 +26,11 @@ export class Package {
   @Column({ type: 'text', nullable: true })
   description: string;
 
+  @Index()
   @Column({ name: 'arrival_time', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   arrivalTime: Date;
 
+  @Index()
   @Column({ default: false })
   delivered: boolean;
 

@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, Index } from 'typeorm';
 import { Resident } from '../../residents/entities/resident.entity';
 import { NotificationType } from '../../notification-types/entities/notification-type.entity';
 import { Apartment } from '../../apartments/entities/apartment.entity';
@@ -32,9 +32,11 @@ export class Notification {
   @Column({ type: 'text' })
   message: string;
 
+  @Index()
   @Column({ name: 'is_read', default: false })
   isRead: boolean;
 
+  @Index()
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }

@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, Index } from 'typeorm';
 import { Resident } from '../../residents/entities/resident.entity';
 import { CommonArea } from '../../common-areas/entities/common-area.entity';
 import { ReservationStatus } from '../../reservation-statuses/entities/reservation-status.entity';
@@ -22,6 +22,7 @@ export class Reservation {
   @Column({ name: 'area_id' })
   areaId: string;
 
+  @Index()
   @Column({ name: 'reservation_date', type: 'date' })
   reservationDate: string;
 
@@ -35,6 +36,7 @@ export class Reservation {
   @JoinColumn({ name: 'status_id' })
   status: ReservationStatus;
 
+  @Index()
   @Column({ name: 'status_id' })
   statusId: string;
 

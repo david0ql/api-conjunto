@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany, Index } from 'typeorm';
 import { Employee } from '../../employees/entities/employee.entity';
 import { PoolEntryGuest } from './pool-entry-guest.entity';
 import { PoolEntryResident } from './pool-entry-resident.entity';
@@ -17,6 +17,7 @@ export class PoolEntry {
   @Column({ name: 'apartment_id' })
   apartmentId: string;
 
+  @Index()
   @Column({ name: 'entry_time', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   entryTime: Date;
 

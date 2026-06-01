@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { Resident } from '../../residents/entities/resident.entity';
 import { Visitor } from '../../visitors/entities/visitor.entity';
 import { Vehicle } from '../../vehicles/entities/vehicle.entity';
@@ -42,6 +42,7 @@ export class AccessAudit {
   @Column({ name: 'apartment_id', type: 'uuid', nullable: true })
   apartmentId: string | null;
 
+  @Index()
   @Column({ name: 'entry_time', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   entryTime: Date;
 
