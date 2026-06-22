@@ -456,6 +456,7 @@ export class ResidentRegistrationsService {
       const existing = await this.residentsRepo.findOne({ where: { document: person.document } });
       let residentId: string;
       let status: 'created' | 'replaced' | 'merged';
+      let emailDropped = false;
 
       if (existing) {
         residentId = existing.id;
@@ -492,19 +493,30 @@ export class ResidentRegistrationsService {
         }
       } else {
         status = 'created';
-        const newResident = this.residentsRepo.create({
+        const baseData = {
           name: person.name,
           lastName: person.lastName,
           document: person.document,
           phone: person.phone ?? undefined,
-          email: person.email || undefined,
           birthDate: person.birthDate ?? undefined,
           residentTypeId,
           passwordHash,
           isActive: true,
-        } as any);
-        const savedResident = await this.residentsRepo.save(newResident);
-        residentId = (savedResident as any).id as string;
+        };
+        let savedResident: any;
+        try {
+          savedResident = await this.residentsRepo.save(
+            this.residentsRepo.create({ ...baseData, email: person.email || undefined } as any),
+          );
+        } catch {
+          // The email is already used by another resident (e.g. a shared family email):
+          // create the resident without email so the approval can continue.
+          emailDropped = true;
+          savedResident = await this.residentsRepo.save(
+            this.residentsRepo.create({ ...baseData, email: undefined } as any),
+          );
+        }
+        residentId = savedResident.id as string;
       }
 
       // Copy photo: always for new/replace; for merge only if the resident has none
@@ -535,7 +547,8 @@ export class ResidentRegistrationsService {
       }
 
       const fullName = `${person.name} ${person.lastName}`.trim();
-      const personEmail = person.email?.trim() || null;
+      // Skip the email when it was dropped due to belonging to another resident
+      const personEmail = !emailDropped && person.email?.trim() ? person.email.trim() : null;
       if (personEmail) {
         credentialEmails.push({ email: personEmail, name: fullName, password, index: results.length });
       }
