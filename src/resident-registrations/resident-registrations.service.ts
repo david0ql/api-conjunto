@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -326,12 +326,28 @@ export class ResidentRegistrationsService {
       email: r.email ?? null,
       birthDate: r.birthDate ?? null,
       residentType: (r as any).residentType?.name ?? null,
+      isActive: r.isActive,
+    });
+
+    // Vehicles currently registered to the apartment
+    const currentVehicles = await this.residentVehiclesRepo.find({
+      where: { apartmentId: request.apartmentId },
+      relations: ['vehicleBrand'],
+      order: { createdAt: 'ASC' },
     });
 
     return {
       requestId: request.id,
       apartmentLabel: this.apartmentLabel(request),
       currentResidents: currentResidents.map(toView),
+      currentVehicles: currentVehicles.map((v) => ({
+        id: v.id,
+        plate: v.plate,
+        vehicleType: v.vehicleType,
+        brandName: (v as any).vehicleBrand?.name ?? null,
+        model: v.model ?? null,
+        color: v.color ?? null,
+      })),
       submittedPersons: request.persons
         .slice()
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
@@ -415,6 +431,19 @@ export class ResidentRegistrationsService {
     const ownerTypeId = ownerType?.id ?? defaultType.id;
     const tenantTypeId = tenantType?.id ?? defaultType.id;
 
+    // "Replace" mode: disable the accounts of the residents currently linked to the
+    // apartment (kept for audit, not deleted). The submitted people become the new
+    // occupants. Re-submitted people are re-enabled in the loop below.
+    if (mode === 'replace') {
+      const currentLinks = await this.residentApartmentsRepo.find({
+        where: { apartmentId: request.apartmentId },
+      });
+      const currentResidentIds = currentLinks.map((l) => l.residentId);
+      if (currentResidentIds.length) {
+        await this.residentsRepo.update({ id: In(currentResidentIds) }, { isActive: false });
+      }
+    }
+
     for (const person of request.persons) {
       const residentTypeId = person.isOwner ? ownerTypeId : tenantTypeId;
 
@@ -443,6 +472,8 @@ export class ResidentRegistrationsService {
           if (!existing.email && person.email?.trim()) updateData.email = person.email.trim();
           if (!existing.birthDate && person.birthDate?.trim()) updateData.birthDate = person.birthDate;
         }
+        // A person present in the submission is a confirmed occupant → keep their account enabled
+        updateData.isActive = true;
         if (Object.keys(updateData).length) {
           try {
             await this.residentsRepo.update(residentId, updateData as any);
