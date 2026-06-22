@@ -35,6 +35,7 @@ import { FinesModule } from './fines/fines.module';
 import { ResidentVehiclesModule } from './resident-vehicles/resident-vehicles.module';
 import { ResidentVehicle } from './resident-vehicles/entities/resident-vehicle.entity';
 import { ResidentRegistrationsModule } from './resident-registrations/resident-registrations.module';
+import { MailModule } from './mail/mail.module';
 import { RegistrationLink } from './resident-registrations/entities/registration-link.entity';
 import { RegistrationRequest } from './resident-registrations/entities/registration-request.entity';
 import { RegistrationRequestPerson } from './resident-registrations/entities/registration-request-person.entity';
@@ -82,6 +83,7 @@ import { Fine } from './fines/entities/fine.entity';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+    MailModule,
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

@@ -133,9 +133,19 @@ export class ResidentRegistrationsController {
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @Get('requests/:id/approval-preview')
+  getApprovalPreview(@Param('id') id: string) {
+    return this.service.getApprovalPreview(id);
+  }
+
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Post('requests/:id/approve')
-  approveRequest(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
-    return this.service.approveRequest(id, user.sub);
+  approveRequest(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtPayload,
+    @Body('mode') mode?: 'replace' | 'merge',
+  ) {
+    return this.service.approveRequest(id, user.sub, mode === 'replace' ? 'replace' : 'merge');
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)

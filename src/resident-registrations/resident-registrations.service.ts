@@ -19,6 +19,9 @@ import { ResidentVehicle } from '../resident-vehicles/entities/resident-vehicle.
 import { Tower } from '../towers/entities/tower.entity';
 import { Apartment } from '../apartments/entities/apartment.entity';
 import { ResidentType } from '../resident-types/entities/resident-type.entity';
+import { MailService } from '../mail/mail.service';
+
+export type ApprovalMode = 'replace' | 'merge';
 
 const PASSWORD_WORDS = ['CASA', 'PISO', 'APTO', 'LLAVE', 'PUERTA'];
 
@@ -67,7 +70,17 @@ export class ResidentRegistrationsService {
     private apartmentsRepo: Repository<Apartment>,
     @InjectRepository(ResidentType)
     private residentTypesRepo: Repository<ResidentType>,
+    private readonly mailService: MailService,
   ) {}
+
+  private apartmentLabel(request: RegistrationRequest): string | undefined {
+    const apt = (request as any).apartment;
+    const tower = (request as any).tower;
+    const parts: string[] = [];
+    if (tower?.name || tower?.code) parts.push(`Torre ${tower.name ?? tower.code}`);
+    if (apt?.number) parts.push(`Apto ${apt.number}`);
+    return parts.length ? parts.join(' · ') : undefined;
+  }
 
   // ─── Links ────────────────────────────────────────────────────────────────
 
@@ -279,6 +292,65 @@ export class ResidentRegistrationsService {
     }
   }
 
+  /**
+   * Returns the submitted persons alongside the residents currently linked to the
+   * apartment, marking which submitted person matches an existing resident (by document).
+   * Lets the admin decide between approving (replace/merge) or rejecting.
+   */
+  async getApprovalPreview(id: string) {
+    const request = await this.findOneRequest(id);
+
+    // Residents currently linked to the apartment (via junction table)
+    const currentLinks = await this.residentApartmentsRepo.find({
+      where: { apartmentId: request.apartmentId },
+    });
+    const currentResidentIds = currentLinks.map((l) => l.residentId);
+    const currentResidents = currentResidentIds.length
+      ? await this.residentsRepo.find({ where: currentResidentIds.map((rid) => ({ id: rid })) })
+      : [];
+
+    const submittedDocuments = request.persons.map((p) => p.document?.trim()).filter(Boolean);
+    const matchingByDocument = submittedDocuments.length
+      ? await this.residentsRepo.find({
+          where: submittedDocuments.map((doc) => ({ document: doc })),
+        })
+      : [];
+    const matchByDoc = new Map(matchingByDocument.map((r) => [r.document, r]));
+
+    const toView = (r: Resident) => ({
+      id: r.id,
+      name: r.name,
+      lastName: r.lastName,
+      document: r.document,
+      phone: r.phone ?? null,
+      email: r.email ?? null,
+      birthDate: r.birthDate ?? null,
+      residentType: (r as any).residentType?.name ?? null,
+    });
+
+    return {
+      requestId: request.id,
+      apartmentLabel: this.apartmentLabel(request),
+      currentResidents: currentResidents.map(toView),
+      submittedPersons: request.persons
+        .slice()
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+        .map((p) => {
+          const match = matchByDoc.get(p.document?.trim());
+          return {
+            name: p.name,
+            lastName: p.lastName,
+            document: p.document,
+            phone: p.phone ?? null,
+            email: p.email ?? null,
+            birthDate: p.birthDate ?? null,
+            isOwner: p.isOwner,
+            existingResident: match ? toView(match) : null,
+          };
+        }),
+    };
+  }
+
   async rejectRequest(id: string, rejectionReason: string, employeeId: string): Promise<RegistrationRequest> {
     const request = await this.findOneRequest(id);
     if (request.status !== 'pending') throw new BadRequestException('Solo se pueden rechazar solicitudes pendientes');
@@ -290,14 +362,47 @@ export class ResidentRegistrationsService {
       reviewedAt: new Date(),
     });
 
+    // Notify every person in the request about the rejection (non-fatal)
+    const apartmentLabel = this.apartmentLabel(request);
+    for (const person of request.persons) {
+      if (!person.email?.trim()) continue;
+      await this.mailService.sendRegistrationRejected(person.email.trim(), {
+        name: `${person.name} ${person.lastName}`.trim(),
+        reason: rejectionReason,
+        apartmentLabel,
+      });
+    }
+
     return this.findOneRequest(id);
   }
 
-  async approveRequest(id: string, employeeId: string): Promise<{ residents: Array<{ name: string; document: string; password: string }> }> {
+  async approveRequest(
+    id: string,
+    employeeId: string,
+    mode: ApprovalMode = 'merge',
+  ): Promise<{
+    residents: Array<{
+      name: string;
+      document: string;
+      email: string | null;
+      status: 'created' | 'replaced' | 'merged';
+      password?: string;
+      emailSent: boolean;
+    }>;
+  }> {
     const request = await this.findOneRequest(id);
     if (request.status !== 'pending') throw new BadRequestException('Solo se pueden aprobar solicitudes pendientes');
 
-    const results: Array<{ name: string; document: string; password: string }> = [];
+    const apartmentLabel = this.apartmentLabel(request);
+    const results: Array<{
+      name: string;
+      document: string;
+      email: string | null;
+      status: 'created' | 'replaced' | 'merged';
+      password?: string;
+      emailSent: boolean;
+    }> = [];
+    const credentialEmails: Array<{ email: string; name: string; password: string; index: number }> = [];
 
     // Find owner and tenant resident type IDs
     const allTypes = await this.residentTypesRepo.find({ order: { name: 'ASC' } });
@@ -311,17 +416,48 @@ export class ResidentRegistrationsService {
     const tenantTypeId = tenantType?.id ?? defaultType.id;
 
     for (const person of request.persons) {
-      const password = generatePassword();
-      const passwordHash = await bcrypt.hash(password, 10);
       const residentTypeId = person.isOwner ? ownerTypeId : tenantTypeId;
 
       // Check for existing document to avoid duplicates
       const existing = await this.residentsRepo.findOne({ where: { document: person.document } });
       let residentId: string;
+      let status: 'created' | 'replaced' | 'merged';
+      let password: string | undefined;
 
       if (existing) {
         residentId = existing.id;
+
+        // Update existing resident according to chosen mode (keep their password)
+        const updateData: Partial<Resident> = {};
+        if (mode === 'replace') {
+          status = 'replaced';
+          updateData.name = person.name;
+          updateData.lastName = person.lastName;
+          updateData.residentTypeId = residentTypeId;
+          if (person.phone?.trim()) updateData.phone = person.phone.trim();
+          if (person.birthDate?.trim()) updateData.birthDate = person.birthDate;
+          if (person.email?.trim()) updateData.email = person.email.trim();
+        } else {
+          status = 'merged';
+          if (!existing.phone && person.phone?.trim()) updateData.phone = person.phone.trim();
+          if (!existing.email && person.email?.trim()) updateData.email = person.email.trim();
+          if (!existing.birthDate && person.birthDate?.trim()) updateData.birthDate = person.birthDate;
+        }
+        if (Object.keys(updateData).length) {
+          try {
+            await this.residentsRepo.update(residentId, updateData as any);
+          } catch {
+            // Likely a unique email conflict: retry without the email field
+            delete (updateData as any).email;
+            if (Object.keys(updateData).length) {
+              await this.residentsRepo.update(residentId, updateData as any);
+            }
+          }
+        }
       } else {
+        status = 'created';
+        password = generatePassword();
+        const passwordHash = await bcrypt.hash(password, 10);
         const newResident = this.residentsRepo.create({
           name: person.name,
           lastName: person.lastName,
@@ -337,16 +473,19 @@ export class ResidentRegistrationsService {
         residentId = (savedResident as any).id as string;
       }
 
-      // Copy photo if exists
+      // Copy photo: always for new/replace; for merge only if the resident has none
       if (person.photoPath) {
-        try {
-          const dest = person.photoPath.replace('registrations/persons', 'residents');
-          const destDir = path.dirname(dest);
-          if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-          fs.copyFileSync(person.photoPath, dest);
-          await this.residentsRepo.update(residentId, { photoPath: dest });
-        } catch {
-          // Non-fatal: skip photo copy on error
+        const shouldCopyPhoto = status === 'created' || mode === 'replace' || !existing?.photoPath;
+        if (shouldCopyPhoto) {
+          try {
+            const dest = person.photoPath.replace('registrations/persons', 'residents');
+            const destDir = path.dirname(dest);
+            if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+            fs.copyFileSync(person.photoPath, dest);
+            await this.residentsRepo.update(residentId, { photoPath: dest });
+          } catch {
+            // Non-fatal: skip photo copy on error
+          }
         }
       }
 
@@ -361,7 +500,12 @@ export class ResidentRegistrationsService {
         );
       }
 
-      results.push({ name: `${person.name} ${person.lastName}`, document: person.document, password });
+      const fullName = `${person.name} ${person.lastName}`.trim();
+      const personEmail = person.email?.trim() || null;
+      if (status === 'created' && personEmail) {
+        credentialEmails.push({ email: personEmail, name: fullName, password: password as string, index: results.length });
+      }
+      results.push({ name: fullName, document: person.document, email: personEmail, status, password, emailSent: false });
     }
 
     // Create vehicles
@@ -393,6 +537,17 @@ export class ResidentRegistrationsService {
       reviewedByEmployeeId: employeeId,
       reviewedAt: new Date(),
     });
+
+    // Send credentials to newly created residents (non-fatal)
+    for (const c of credentialEmails) {
+      const sent = await this.mailService.sendResidentCredentials(c.email, {
+        name: c.name,
+        loginEmail: c.email,
+        password: c.password,
+        apartmentLabel,
+      });
+      results[c.index].emailSent = sent;
+    }
 
     return { residents: results };
   }
