@@ -447,17 +447,22 @@ export class ResidentRegistrationsService {
     for (const person of request.persons) {
       const residentTypeId = person.isOwner ? ownerTypeId : tenantTypeId;
 
+      // A fresh password is generated for everyone (new or existing) so that every
+      // approved person can be emailed working credentials.
+      const password = generatePassword();
+      const passwordHash = await bcrypt.hash(password, 10);
+
       // Check for existing document to avoid duplicates
       const existing = await this.residentsRepo.findOne({ where: { document: person.document } });
       let residentId: string;
       let status: 'created' | 'replaced' | 'merged';
-      let password: string | undefined;
 
       if (existing) {
         residentId = existing.id;
 
-        // Update existing resident according to chosen mode (keep their password)
-        const updateData: Partial<Resident> = {};
+        // Update existing resident according to chosen mode + reset password so the
+        // emailed credentials are valid.
+        const updateData: Partial<Resident> = { passwordHash };
         if (mode === 'replace') {
           status = 'replaced';
           updateData.name = person.name;
@@ -487,8 +492,6 @@ export class ResidentRegistrationsService {
         }
       } else {
         status = 'created';
-        password = generatePassword();
-        const passwordHash = await bcrypt.hash(password, 10);
         const newResident = this.residentsRepo.create({
           name: person.name,
           lastName: person.lastName,
@@ -533,8 +536,8 @@ export class ResidentRegistrationsService {
 
       const fullName = `${person.name} ${person.lastName}`.trim();
       const personEmail = person.email?.trim() || null;
-      if (status === 'created' && personEmail) {
-        credentialEmails.push({ email: personEmail, name: fullName, password: password as string, index: results.length });
+      if (personEmail) {
+        credentialEmails.push({ email: personEmail, name: fullName, password, index: results.length });
       }
       results.push({ name: fullName, document: person.document, email: personEmail, status, password, emailSent: false });
     }
