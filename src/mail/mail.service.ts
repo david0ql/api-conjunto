@@ -6,8 +6,10 @@ import * as path from 'path';
 import {
   LOGO_CID,
   renderCredentialsEmail,
+  renderPasswordResetEmail,
   renderRejectionEmail,
   type CredentialsEmailParams,
+  type PasswordResetEmailParams,
   type RejectionEmailParams,
 } from './mail.templates';
 
@@ -78,6 +80,14 @@ export class MailService {
       huaweiUrl: this.config.get<string>('MAIL_HUAWEI_URL') || undefined,
       androidTestEmail: this.config.get<string>('MAIL_ANDROID_TEST_EMAIL') || undefined,
     });
+    return this.send(to, subject, html);
+  }
+
+  async sendPasswordReset(
+    to: string,
+    params: Omit<PasswordResetEmailParams, 'appName'>,
+  ): Promise<boolean> {
+    const { subject, html } = renderPasswordResetEmail({ ...params, appName: this.appName });
     return this.send(to, subject, html);
   }
 

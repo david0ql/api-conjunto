@@ -21,6 +21,13 @@ export interface RejectionEmailParams {
   apartmentLabel?: string;
 }
 
+export interface PasswordResetEmailParams {
+  name: string;
+  resetUrl: string;
+  ttlMinutes: number;
+  appName?: string;
+}
+
 function escapeHtml(value: string): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -164,6 +171,49 @@ export function renderCredentialsEmail(params: CredentialsEmailParams): {
       preheader: 'Tu registro fue aprobado. Aquí están tus credenciales y cómo descargar la app.',
       accent: '#16a34a',
       heading: '¡Tu registro fue aprobado!',
+      bodyHtml,
+    }),
+  };
+}
+
+export function renderPasswordResetEmail(params: PasswordResetEmailParams): {
+  subject: string;
+  html: string;
+} {
+  const appName = params.appName || 'Astra Domus';
+  const greetingName = params.name?.trim() || 'Residente';
+  const url = params.resetUrl.trim();
+  const minutes = Math.max(1, Math.round(params.ttlMinutes));
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px 0;">Hola <strong>${escapeHtml(greetingName)}</strong>,</p>
+    <p style="margin:0 0 8px 0;">La administración de <strong>${escapeHtml(appName)}</strong> generó una solicitud para que restablezcas la contraseña de tu cuenta.</p>
+    <p style="margin:0 0 20px 0;">Haz clic en el botón para crear una nueva contraseña. Este enlace es de un solo uso y vence en <strong>${minutes} minutos</strong>.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 22px 0;">
+      <tr>
+        <td align="center">
+          <a href="${escapeHtml(url)}" style="display:inline-block;padding:13px 28px;background:${BRAND_DARK};color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;border-radius:10px;">Restablecer mi contraseña</a>
+        </td>
+      </tr>
+    </table>
+    <p style="margin:0 0 6px 0;color:${BRAND_MUTED};font-size:13px;">Si el botón no funciona, copia y pega este enlace en tu navegador:</p>
+    <p style="margin:0 0 18px 0;word-break:break-all;"><a href="${escapeHtml(url)}" style="color:#2563eb;font-size:13px;">${escapeHtml(url)}</a></p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 0 0;border:1px solid #fde68a;border-radius:10px;background:#fffbeb;">
+      <tr>
+        <td style="padding:14px 16px;color:#78350f;font-size:13px;line-height:1.55;">
+          <strong>¿No solicitaste esto?</strong> Si no esperabas este correo, ignóralo: tu contraseña actual seguirá funcionando. Por seguridad, nunca compartas este enlace con nadie.
+        </td>
+      </tr>
+    </table>
+  `;
+
+  return {
+    subject: `Restablece tu contraseña · ${appName}`,
+    html: layout({
+      appName,
+      preheader: 'Solicitud para restablecer tu contraseña. El enlace vence pronto.',
+      accent: '#2563eb',
+      heading: 'Restablece tu contraseña',
       bodyHtml,
     }),
   };
