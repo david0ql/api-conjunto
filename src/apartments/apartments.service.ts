@@ -25,8 +25,15 @@ export class ApartmentsService {
 
   private async attachResidentCounts(apartments: Apartment[]): Promise<Apartment[]> {
     if (apartments.length === 0) return apartments;
+    // Occupancy counts a resident linked via EITHER the legacy
+    // residents.apartment_id column OR the resident_apartments junction
+    // (multi-apartment), de-duplicated so a resident is counted once per apt.
     const rows: { apartment_id: string; count: string }[] = await this.repository.query(
-      `SELECT apartment_id, COUNT(*) AS count FROM residents WHERE apartment_id IS NOT NULL GROUP BY apartment_id`,
+      `SELECT apartment_id, COUNT(DISTINCT resident_id) AS count FROM (
+         SELECT resident_id, apartment_id FROM resident_apartments
+         UNION
+         SELECT id AS resident_id, apartment_id FROM residents WHERE apartment_id IS NOT NULL
+       ) t GROUP BY apartment_id`,
     );
     const countMap = new Map(rows.map((r) => [r.apartment_id, parseInt(r.count, 10)]));
     return apartments.map((apt) => ({ ...apt, residentCount: countMap.get(apt.id) ?? 0 }));
@@ -46,9 +53,9 @@ export class ApartmentsService {
       qb.andWhere('(a.number ILIKE :q OR towerData.name ILIKE :q)', { q });
     }
     if (query.occupancy === 'occupied') {
-      qb.andWhere('EXISTS (SELECT 1 FROM residents r WHERE r.apartment_id = a.id)');
+      qb.andWhere('(EXISTS (SELECT 1 FROM residents r WHERE r.apartment_id = a.id) OR EXISTS (SELECT 1 FROM resident_apartments ra WHERE ra.apartment_id = a.id))');
     } else if (query.occupancy === 'vacant') {
-      qb.andWhere('NOT EXISTS (SELECT 1 FROM residents r WHERE r.apartment_id = a.id)');
+      qb.andWhere('NOT EXISTS (SELECT 1 FROM residents r WHERE r.apartment_id = a.id) AND NOT EXISTS (SELECT 1 FROM resident_apartments ra WHERE ra.apartment_id = a.id)');
     }
 
     const [apartments, total] = await qb.orderBy('a.tower', 'ASC').addOrderBy('a.number', 'ASC').skip((page - 1) * limit).take(limit).getManyAndCount();
@@ -60,7 +67,11 @@ export class ApartmentsService {
     const [total, occupiedRows] = await Promise.all([
       this.repository.count(),
       this.repository.query(
-        'SELECT COUNT(DISTINCT apartment_id)::int AS occupied FROM residents WHERE apartment_id IS NOT NULL',
+        `SELECT COUNT(DISTINCT apartment_id)::int AS occupied FROM (
+           SELECT apartment_id FROM resident_apartments
+           UNION
+           SELECT apartment_id FROM residents WHERE apartment_id IS NOT NULL
+         ) t`,
       ),
     ]);
     const occupied = Number(occupiedRows?.[0]?.occupied ?? 0);

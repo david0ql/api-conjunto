@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as QRCode from 'qrcode';
 import { Resident } from './entities/resident.entity';
@@ -37,26 +37,43 @@ export class ResidentsService {
       .leftJoinAndSelect('r.apartment', 'apartment')
       .leftJoinAndSelect('apartment.towerData', 'towerData');
 
+    // A resident can be linked to an apartment either through the legacy
+    // residents.apartment_id column or through the resident_apartments junction
+    // (multi-apartment). Every apartment filter below matches EITHER source.
     if (apartmentId) {
-      qb.andWhere('r.apartment_id = :apartmentId', { apartmentId });
+      qb.andWhere(
+        '(r.apartment_id = :apartmentId OR EXISTS (SELECT 1 FROM resident_apartments ra WHERE ra.resident_id = r.id AND ra.apartment_id = :apartmentId))',
+        { apartmentId },
+      );
     }
     if (query.search) {
       const q = `%${query.search}%`;
-      qb.andWhere('(r.name ILIKE :q OR r.last_name ILIKE :q OR r.document ILIKE :q OR r.email ILIKE :q OR r.phone ILIKE :q OR apartment.number ILIKE :q)', { q });
+      qb.andWhere(
+        '(r.name ILIKE :q OR r.last_name ILIKE :q OR r.document ILIKE :q OR r.email ILIKE :q OR r.phone ILIKE :q OR apartment.number ILIKE :q OR EXISTS (SELECT 1 FROM resident_apartments ra JOIN apartments raa ON raa.id = ra.apartment_id WHERE ra.resident_id = r.id AND raa.number ILIKE :q))',
+        { q },
+      );
     }
     if (query.typeId) {
       qb.andWhere('r.resident_type_id = :typeId', { typeId: query.typeId });
     }
-    if (query.isActive !== undefined && query.isActive !== '') {
+    // Inactive (soft-deleted) residents are hidden by default so they don't
+    // clutter the directory. They remain retrievable for auditing by explicitly
+    // requesting isActive=false. Pass isActive=all to list everyone.
+    if (query.isActive === undefined || query.isActive === '') {
+      qb.andWhere('r.is_active = true');
+    } else if (query.isActive !== 'all') {
       qb.andWhere('r.is_active = :isActive', { isActive: query.isActive === 'true' });
     }
     if (query.hasApartment === 'yes') {
-      qb.andWhere('r.apartment_id IS NOT NULL');
+      qb.andWhere('(r.apartment_id IS NOT NULL OR EXISTS (SELECT 1 FROM resident_apartments ra WHERE ra.resident_id = r.id))');
     } else if (query.hasApartment === 'no') {
-      qb.andWhere('r.apartment_id IS NULL');
+      qb.andWhere('r.apartment_id IS NULL AND NOT EXISTS (SELECT 1 FROM resident_apartments ra WHERE ra.resident_id = r.id)');
     }
     if (query.towerId) {
-      qb.andWhere('apartment.tower_id = :towerId', { towerId: query.towerId });
+      qb.andWhere(
+        '(apartment.tower_id = :towerId OR EXISTS (SELECT 1 FROM resident_apartments ra JOIN apartments raa ON raa.id = ra.apartment_id WHERE ra.resident_id = r.id AND raa.tower_id = :towerId))',
+        { towerId: query.towerId },
+      );
     }
 
     const [data, total] = await qb
@@ -64,7 +81,63 @@ export class ResidentsService {
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
+    await this.attachApartments(data);
+    await this.attachPhotos(data);
     return paginate(data, total, page, limit);
+  }
+
+  /**
+   * For residents that don't have their own photo, falls back to the photo
+   * captured in their registration request (matched by document). Lets the
+   * residents list show a face even before an explicit resident photo is set.
+   */
+  private async attachPhotos(residents: Resident[]): Promise<void> {
+    const missing = residents.filter((r) => !r.photoPath && r.document);
+    if (missing.length === 0) return;
+    const documents = missing.map((r) => r.document);
+    const rows: { document: string; photo_path: string }[] = await this.repository.query(
+      `SELECT DISTINCT ON (document) document, photo_path
+         FROM registration_request_persons
+        WHERE photo_path IS NOT NULL AND photo_path <> '' AND document = ANY($1)
+        ORDER BY document`,
+      [documents],
+    );
+    const byDocument = new Map(rows.map((row) => [row.document, row.photo_path]));
+    for (const r of missing) {
+      const photo = byDocument.get(r.document);
+      if (photo) r.photoPath = photo;
+    }
+  }
+
+  /**
+   * Attaches an `apartments` array to each resident, merging the junction
+   * (resident_apartments) with the legacy residents.apartment_id column and
+   * de-duplicating by apartment id. Residents that only have the legacy column
+   * (the vast majority of existing data) still get their apartment listed.
+   */
+  private async attachApartments(residents: Resident[]): Promise<void> {
+    if (residents.length === 0) return;
+    const ids = residents.map((r) => r.id);
+    const links = await this.residentApartmentsRepository.find({
+      where: { residentId: In(ids) },
+      relations: ['apartment', 'apartment.towerData'],
+      order: { createdAt: 'ASC' },
+    });
+    const byResident = new Map<string, any[]>();
+    for (const link of links) {
+      if (!link.apartment) continue;
+      const list = byResident.get(link.residentId) ?? [];
+      list.push(link.apartment);
+      byResident.set(link.residentId, list);
+    }
+    for (const r of residents) {
+      const list = byResident.get(r.id) ?? [];
+      // Fold in the legacy primary apartment if it isn't already present.
+      if (r.apartment && !list.some((a) => a.id === r.apartment.id)) {
+        list.unshift(r.apartment);
+      }
+      (r as any).apartments = list;
+    }
   }
 
   async getStats(): Promise<{ total: number; active: number }> {
@@ -84,6 +157,8 @@ export class ResidentsService {
       .where('r.id = :id', { id })
       .getOne();
     if (!item) throw new NotFoundException(`Resident #${id} not found`);
+    await this.attachApartments([item]);
+    await this.attachPhotos([item]);
     return item;
   }
 
@@ -135,20 +210,16 @@ export class ResidentsService {
     return this.repository.save(item);
   }
 
+  /**
+   * Soft-delete: a resident is NEVER physically removed (that would destroy
+   * audit history — fines, packages, access logs, votes). Instead the resident
+   * is deactivated: they can no longer log in and drop out of the default
+   * listing, but remain in the database and are still reachable for auditing
+   * via the "Inactivo" filter.
+   */
   async remove(id: string): Promise<void> {
     await this.findOne(id);
-    // Clean up non-nullable FK references before deleting
-    await this.repository.query('DELETE FROM resident_apartments WHERE resident_id = $1', [id]);
-    await this.repository.query('DELETE FROM reservations WHERE resident_id = $1', [id]);
-    await this.repository.query('DELETE FROM assembly_votes WHERE resident_id = $1', [id]);
-    await this.repository.query('DELETE FROM assembly_resident_tokens WHERE resident_id = $1', [id]);
-    // Nullify nullable FK references
-    await this.repository.query('UPDATE access_audit SET resident_id = NULL WHERE resident_id = $1', [id]);
-    await this.repository.query('UPDATE fines SET resident_id = NULL WHERE resident_id = $1', [id]);
-    await this.repository.query('UPDATE packages SET resident_id = NULL WHERE resident_id = $1', [id]);
-    await this.repository.query('UPDATE call_sessions SET initiated_by_resident_id = NULL WHERE initiated_by_resident_id = $1', [id]);
-    await this.repository.query('UPDATE call_sessions SET accepted_by_resident_id = NULL WHERE accepted_by_resident_id = $1', [id]);
-    await this.repository.query('DELETE FROM residents WHERE id = $1', [id]);
+    await this.repository.update(id, { isActive: false } as any);
   }
 
   async deactivate(id: string): Promise<Resident> {
