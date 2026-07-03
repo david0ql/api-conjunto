@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, MaxLength, IsUUID, MinLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, MaxLength, IsUUID, MinLength, Matches } from 'class-validator';
 
 export class CreateEmployeeDto {
   @IsString()
@@ -19,6 +19,9 @@ export class CreateEmployeeDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
+  // El "@" está reservado para el login de residentes por correo; el login de
+  // empleados es por usuario de texto, así que no puede contener "@".
+  @Matches(/^[^@]+$/, { message: 'El usuario no puede contener el carácter @' })
   username: string;
 
   @IsString()

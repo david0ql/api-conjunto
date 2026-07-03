@@ -61,6 +61,13 @@ export class EmployeesService {
   async update(id: string, dto: UpdateEmployeeDto): Promise<Employee> {
     const item = await this.findOne(id);
     const data = dto as any;
+    // Reject a username already taken by a different employee.
+    if (data.username && data.username !== item.username) {
+      const clash = await this.repository.findOne({ where: { username: data.username } });
+      if (clash && clash.id !== id) {
+        throw new ConflictException('Username already in use');
+      }
+    }
     if (data.password) {
       (item as any).passwordHash = await bcrypt.hash(data.password, 10);
     }
