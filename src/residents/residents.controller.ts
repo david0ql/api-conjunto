@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
+import { AdminOrPorterGuard } from '../common/guards/admin-or-porter.guard';
 import { OperationsEmployeeGuard } from '../common/guards/operations-employee.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
@@ -62,31 +63,32 @@ export class ResidentsController {
   }
 
   @Post()
-  @UseGuards(AdminGuard)
+  @UseGuards(AdminOrPorterGuard)
   create(@Body() dto: CreateResidentDto) {
     return this.service.create(dto);
   }
 
   @Patch(':id')
-  @UseGuards(AdminGuard)
+  @UseGuards(AdminOrPorterGuard)
   update(@Param('id') id: string, @Body() dto: UpdateResidentDto) {
     return this.service.update(id, dto);
   }
 
   @Patch(':id/deactivate')
-  @UseGuards(AdminGuard)
+  @UseGuards(AdminOrPorterGuard)
   deactivate(@Param('id') id: string) {
     return this.service.deactivate(id);
   }
 
   @Patch(':id/activate')
-  @UseGuards(AdminGuard)
+  @UseGuards(AdminOrPorterGuard)
   activate(@Param('id') id: string) {
     return this.service.activate(id);
   }
 
+  // El portero necesita asignar apartamento como parte del alta de residente.
   @Patch(':id/assign-apartment')
-  @UseGuards(AdminGuard)
+  @UseGuards(AdminOrPorterGuard)
   assignApartment(@Param('id') id: string, @Body() body: { apartmentId: string }) {
     return this.service.assignApartment(id, body.apartmentId);
   }

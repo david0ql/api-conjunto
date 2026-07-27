@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Ip, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { AdminGuard } from '../common/guards/admin.guard';
+import { AdminOrPorterGuard } from '../common/guards/admin-or-porter.guard';
 import { ResetThrottleGuard } from '../common/guards/reset-throttle.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
@@ -12,9 +12,9 @@ import { ConfirmResetDto } from './dto/confirm-reset.dto';
 export class PasswordResetsController {
   constructor(private readonly service: PasswordResetsService) {}
 
-  /** Admin-only: trigger a reset link for a resident. */
+  /** Admin or porter: trigger a reset link for a resident. */
   @Post('request')
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, AdminOrPorterGuard)
   request(@Body() dto: RequestResetDto, @CurrentUser() user: JwtPayload, @Ip() ip: string) {
     return this.service.requestForResident(dto.residentId, user.sub, ip);
   }
