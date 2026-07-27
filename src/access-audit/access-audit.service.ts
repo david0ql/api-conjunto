@@ -154,14 +154,29 @@ export class AccessAuditService {
     return item;
   }
 
+  /**
+   * Busca el vehiculo de residente comparando SIN espacios: un match exacto deja
+   * fuera las placas cargadas sin normalizar ("ABC123" vs "ABC 123"), y cuando el
+   * vehiculo no aparece la porteria termina registrando al residente como visita.
+   */
+  private findResidentVehicleByPlate(plate: string) {
+    const bare = normalizePlate(plate).replace(/\s+/g, '');
+    if (!bare) return Promise.resolve(null);
+
+    return this.residentVehiclesRepository
+      .createQueryBuilder('rv')
+      .leftJoinAndSelect('rv.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData')
+      .leftJoinAndSelect('rv.vehicleBrand', 'vehicleBrand')
+      .where("REPLACE(UPPER(rv.plate), ' ', '') = :bare", { bare })
+      .getOne();
+  }
+
   async searchByPlate(plate: string): Promise<PlateSearchResult> {
     const normalized = normalizePlate(plate);
     if (!normalized) return { kind: 'not_found', plate: normalized };
 
-    const residentVehicle = await this.residentVehiclesRepository.findOne({
-      where: { plate: normalized },
-      relations: ['apartment', 'apartment.towerData', 'vehicleBrand'],
-    });
+    const residentVehicle = await this.findResidentVehicleByPlate(normalized);
 
     if (residentVehicle) {
       const residents = await this.repository.manager.find(Resident, {
@@ -179,7 +194,9 @@ export class AccessAuditService {
       .leftJoinAndSelect('a.vehicleBrand', 'vehicleBrand')
       .leftJoinAndSelect('a.apartment', 'apartment')
       .leftJoinAndSelect('apartment.towerData', 'towerData')
-      .where('a.vehicle_plate = :plate', { plate: normalized })
+      .where("REPLACE(UPPER(a.vehicle_plate), ' ', '') = :bare", {
+        bare: normalized.replace(/\s+/g, ''),
+      })
       .andWhere('a.visitor_id IS NOT NULL')
       .orderBy('a.entryTime', 'DESC')
       .getOne();
@@ -194,10 +211,7 @@ export class AccessAuditService {
 
     const matches: PlateLocationResult['matches'] = [];
 
-    const residentVehicle = await this.residentVehiclesRepository.findOne({
-      where: { plate: normalized },
-      relations: ['apartment', 'apartment.towerData', 'vehicleBrand'],
-    });
+    const residentVehicle = await this.findResidentVehicleByPlate(normalized);
 
     if (residentVehicle) {
       const residents = await this.repository.manager.find(Resident, {
@@ -206,6 +220,12 @@ export class AccessAuditService {
         order: { createdAt: 'DESC' },
       });
       matches.push({ kind: 'resident_vehicle', vehicle: residentVehicle, residents });
+
+      // El vehiculo esta registrado a un apartamento: esa es su identidad actual.
+      // Los ingresos antiguos donde se registro como visita siguen en el historial
+      // de auditoria, pero no se devuelven aqui: la porteria no debe verlo como
+      // residente Y visitante a la vez.
+      return { plate: normalized, matches };
     }
 
     const lastAccess = await this.repository
@@ -214,7 +234,9 @@ export class AccessAuditService {
       .leftJoinAndSelect('a.vehicleBrand', 'vehicleBrand')
       .leftJoinAndSelect('a.apartment', 'apartment')
       .leftJoinAndSelect('apartment.towerData', 'towerData')
-      .where('a.vehicle_plate = :plate', { plate: normalized })
+      .where("REPLACE(UPPER(a.vehicle_plate), ' ', '') = :bare", {
+        bare: normalized.replace(/\s+/g, ''),
+      })
       .andWhere('a.visitor_id IS NOT NULL')
       .orderBy('a.entryTime', 'DESC')
       .getOne();
