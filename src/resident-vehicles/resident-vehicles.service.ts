@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ResidentVehicle } from './entities/resident-vehicle.entity';
@@ -68,14 +68,62 @@ export class ResidentVehiclesService {
   }
 
   async findByPlate(plate: string): Promise<ResidentVehicle | null> {
+    // Se compara ignorando espacios para que "ABC123" y "ABC 123" encuentren el
+    // mismo vehículo, incluidos registros antiguos guardados sin normalizar.
+    const bare = normalizePlate(plate).replace(/\s+/g, '');
+    if (!bare) return null;
+
+    return this.repository
+      .createQueryBuilder('rv')
+      .leftJoinAndSelect('rv.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData')
+      .leftJoinAndSelect('rv.vehicleBrand', 'vehicleBrand')
+      .where("REPLACE(UPPER(rv.plate), ' ', '') = :bare", { bare })
+      .getOne();
+  }
+
+  /**
+   * La placa es única en todo el conjunto. Se compara ignorando espacios para
+   * detectar también registros antiguos guardados sin normalizar ("ABC123"),
+   * que un índice único sobre la columna cruda no alcanzaría a emparejar.
+   */
+  private async assertPlateIsAvailable(
+    plate: string,
+    apartmentId: string,
+    excludeId?: string,
+  ): Promise<void> {
     const normalized = normalizePlate(plate);
-    return this.repository.findOne({
-      where: { plate: normalized },
-      relations: ['apartment', 'apartment.towerData', 'vehicleBrand'],
-    });
+    const bare = normalized.replace(/\s+/g, '');
+    if (!bare) return;
+
+    const qb = this.repository
+      .createQueryBuilder('rv')
+      .leftJoinAndSelect('rv.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData')
+      .where("REPLACE(UPPER(rv.plate), ' ', '') = :bare", { bare });
+
+    if (excludeId) qb.andWhere('rv.id != :excludeId', { excludeId });
+
+    const existing = await qb.getOne();
+    if (!existing) return;
+
+    if (existing.apartmentId === apartmentId) {
+      throw new ConflictException(
+        `La placa ${normalized} ya está registrada en este apartamento`,
+      );
+    }
+
+    const tower = existing.apartment?.towerData?.name;
+    const number = existing.apartment?.number;
+    const location = number ? `${tower ? `${tower} · ` : ''}Apt. ${number}` : 'otro apartamento';
+    throw new ConflictException(
+      `La placa ${normalized} ya está registrada en ${location}`,
+    );
   }
 
   async create(dto: CreateResidentVehicleDto, employeeId: string): Promise<ResidentVehicle> {
+    await this.assertPlateIsAvailable(dto.plate, dto.apartmentId);
+
     const item = this.repository.create({
       ...dto,
       vehicleType: dto.vehicleType ?? 'motorcycle',
@@ -91,6 +139,10 @@ export class ResidentVehiclesService {
 
   async update(id: string, dto: UpdateResidentVehicleDto): Promise<ResidentVehicle> {
     const item = await this.findOne(id);
+
+    if (dto.plate) {
+      await this.assertPlateIsAvailable(dto.plate, dto.apartmentId ?? item.apartmentId, id);
+    }
 
     await this.repository.update(id, {
       apartmentId: dto.apartmentId ?? item.apartmentId,

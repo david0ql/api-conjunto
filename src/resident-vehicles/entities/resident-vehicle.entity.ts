@@ -1,9 +1,14 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, Index } from 'typeorm';
 import { Apartment } from '../../apartments/entities/apartment.entity';
 import { VehicleBrand } from '../../vehicle-brands/entities/vehicle-brand.entity';
 import { Employee } from '../../employees/entities/employee.entity';
 
+// Una placa identifica un vehículo único dentro del conjunto: no puede repetirse
+// ni en el mismo apartamento ni en otro. La placa se guarda siempre normalizada
+// (mayúsculas, "ABC 123"), por lo que el índice basta para blindar la regla a
+// nivel de base de datos; el servicio además la valida para dar un mensaje útil.
 @Entity('resident_vehicles')
+@Index('UQ_resident_vehicles_plate', ['plate'], { unique: true })
 export class ResidentVehicle {
   @PrimaryGeneratedColumn('uuid')
   id: string;
