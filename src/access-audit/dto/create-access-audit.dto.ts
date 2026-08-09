@@ -1,5 +1,5 @@
 import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
-import { ACCESS_ENTRY_TYPES, type AccessEntryType } from '../entities/access-audit.entity';
+import { ACCESS_ENTRY_TYPES, type AccessEntryType, VISITOR_CATEGORIES, type VisitorCategory } from '../entities/access-audit.entity';
 
 export class CreateAccessAuditDto {
   @IsUUID()
@@ -17,6 +17,10 @@ export class CreateAccessAuditDto {
   @IsIn(ACCESS_ENTRY_TYPES)
   @IsOptional()
   entryType?: AccessEntryType;
+
+  @IsIn(VISITOR_CATEGORIES)
+  @IsOptional()
+  visitorCategory?: VisitorCategory;
 
   @IsUUID()
   @IsOptional()

@@ -9,6 +9,9 @@ import { VehicleBrand } from '../../vehicle-brands/entities/vehicle-brand.entity
 export const ACCESS_ENTRY_TYPES = ['pedestrian', 'car', 'motorcycle', 'taxi', 'other'] as const;
 export type AccessEntryType = (typeof ACCESS_ENTRY_TYPES)[number];
 
+export const VISITOR_CATEGORIES = ['visita', 'domiciliario'] as const;
+export type VisitorCategory = (typeof VISITOR_CATEGORIES)[number];
+
 @Entity('access_audit')
 export class AccessAudit {
   @PrimaryGeneratedColumn('uuid')
@@ -48,6 +51,9 @@ export class AccessAudit {
 
   @Column({ name: 'entry_type', type: 'varchar', length: 20, default: 'pedestrian' })
   entryType: AccessEntryType;
+
+  @Column({ name: 'visitor_category', type: 'varchar', length: 20, default: 'visita' })
+  visitorCategory: VisitorCategory;
 
   @ManyToOne(() => VehicleBrand, { nullable: true, eager: false })
   @JoinColumn({ name: 'vehicle_brand_id' })

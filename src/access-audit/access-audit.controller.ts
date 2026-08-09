@@ -46,13 +46,14 @@ export class AccessAuditController {
     @Query('search') search?: string,
     @Query('type') type?: string,
     @Query('entryType') entryType?: string,
+    @Query('visitorCategory') visitorCategory?: string,
     @Query('entryTime') entryTime?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @Query('towerId') towerId?: string,
     @Query('apartmentId') apartmentId?: string,
   ) {
-    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, type, entryType, entryTime, dateFrom, dateTo, towerId, apartmentId });
+    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, type, entryType, visitorCategory, entryTime, dateFrom, dateTo, towerId, apartmentId });
   }
 
   @Get('my')
@@ -79,6 +80,12 @@ export class AccessAuditController {
   @UseGuards(EmployeeGuard)
   locatePlate(@Query('plate') plate?: string) {
     return this.service.locatePlate(plate?.trim() ?? '');
+  }
+
+  @Get('search-open-by-document')
+  @UseGuards(EmployeeGuard)
+  searchOpenByDocument(@Query('document') document?: string) {
+    return this.service.findOpenByDocument(document?.trim() ?? '');
   }
 
   @Get('frequent-visitors')

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, IsNull, Repository } from 'typeorm';
 import { AccessAudit } from './entities/access-audit.entity';
 import { CreateAccessAuditDto } from './dto/create-access-audit.dto';
 import { UpdateAccessAuditDto } from './dto/update-access-audit.dto';
@@ -16,6 +16,7 @@ interface AccessFilters extends PaginationQueryDto {
   search?: string;
   type?: string;
   entryType?: string;
+  visitorCategory?: string;
   entryTime?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -101,6 +102,9 @@ export class AccessAuditService {
     }
     if (query.entryType) {
       qb.andWhere('a.entry_type = :entryType', { entryType: query.entryType });
+    }
+    if (query.visitorCategory) {
+      qb.andWhere('a.visitor_category = :visitorCategory', { visitorCategory: query.visitorCategory });
     }
     if (query.entryTime) {
       const startDate = periodToStartDate(query.entryTime);
@@ -248,6 +252,7 @@ export class AccessAuditService {
 
   async create(dto: CreateAccessAuditDto, options: { visitorPhotoWasUploaded?: boolean } = {}): Promise<AccessAudit> {
     const entryType = dto.entryType ?? 'pedestrian';
+    const visitorCategory = dto.visitorCategory ?? 'visita';
     const isCarOrMoto = entryType === 'car' || entryType === 'motorcycle';
     const isTaxi = entryType === 'taxi';
     const hasVehicle = isCarOrMoto || isTaxi;
@@ -275,6 +280,7 @@ export class AccessAuditService {
     const item = this.repository.create({
       ...dto,
       entryType,
+      visitorCategory,
       visitorPhotoPath,
       vehicleBrandId: isCarOrMoto ? (dto.vehicleBrandId ?? null) : null,
       vehicleColor: hasVehicle ? (dto.vehicleColor?.trim() || null) : null,
@@ -301,8 +307,27 @@ export class AccessAuditService {
 
   async registerExit(id: string): Promise<AccessAudit> {
     const item = await this.findOne(id);
+    if (item.exitTime) {
+      throw new BadRequestException('Este ingreso ya tiene salida registrada');
+    }
     item.exitTime = new Date();
     return this.repository.save(item);
+  }
+
+  async findOpenByDocument(document: string): Promise<{ visitor: Visitor | null; openAccess: AccessAudit | null }> {
+    const trimmed = document.trim();
+    if (!trimmed) return { visitor: null, openAccess: null };
+
+    const visitor = await this.visitorsRepository.findOne({ where: { document: trimmed } });
+    if (!visitor) return { visitor: null, openAccess: null };
+
+    const openAccess = await this.repository.findOne({
+      where: { visitorId: visitor.id, exitTime: IsNull() },
+      relations: ['apartment', 'apartment.towerData', 'vehicleBrand'],
+      order: { entryTime: 'DESC' },
+    });
+
+    return { visitor, openAccess: openAccess ?? null };
   }
 
   async findByApartment(apartmentId: string): Promise<AccessAudit[]> {
