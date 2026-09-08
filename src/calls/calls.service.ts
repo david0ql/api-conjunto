@@ -6,7 +6,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, MoreThanOrEqual, Repository } from 'typeorm';
+import {
+  In,
+  IsNull,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  Repository,
+} from 'typeorm';
 import { Apartment } from '../apartments/entities/apartment.entity';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { Employee } from '../employees/entities/employee.entity';
@@ -22,7 +28,10 @@ import type {
 import { CallTraceEvent } from './entities/call-trace-event.entity';
 import { CallSession } from './entities/call-session.entity';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import {
+  PaginatedResponse,
+  paginate,
+} from '../common/dto/paginated-response.dto';
 import { periodToStartDate } from '../common/utils/period-filter';
 
 interface CallHistoryFilters extends PaginationQueryDto {
@@ -34,6 +43,7 @@ interface CallHistoryFilters extends PaginationQueryDto {
 
 @Injectable()
 export class CallsService {
+  private readonly ringingTimeoutMs = 45_000;
   constructor(
     @InjectRepository(CallSession)
     private readonly callSessionsRepository: Repository<CallSession>,
@@ -50,7 +60,10 @@ export class CallsService {
     private readonly configService: ConfigService,
   ) {}
 
-  async createCall(input: { apartmentId: string; initiatedByEmployeeId: string }) {
+  async createCall(input: {
+    apartmentId: string;
+    initiatedByEmployeeId: string;
+  }) {
     const apartment = await this.apartmentsRepository.findOne({
       where: { id: input.apartmentId },
       relations: ['towerData'],
@@ -63,16 +76,22 @@ export class CallsService {
       where: { id: input.initiatedByEmployeeId },
     });
     if (!employee) {
-      throw new NotFoundException(`Employee #${input.initiatedByEmployeeId} not found`);
+      throw new NotFoundException(
+        `Employee #${input.initiatedByEmployeeId} not found`,
+      );
     }
     await this.assertEmployeeAvailable(
       employee.id,
       'Este empleado ya tiene una llamada en curso y no puede iniciar otra todavía',
     );
 
-    const targetResidentIds = await this.getTargetResidentIdsForApartment(apartment.id);
+    const targetResidentIds = await this.getTargetResidentIdsForApartment(
+      apartment.id,
+    );
     if (targetResidentIds.length === 0) {
-      throw new ConflictException('Este apartamento no tiene residentes activos para recibir la llamada');
+      throw new ConflictException(
+        'Este apartamento no tiene residentes activos para recibir la llamada',
+      );
     }
 
     const call = this.callSessionsRepository.create({
@@ -84,6 +103,7 @@ export class CallsService {
       targetEmployeeIds: [],
       rejectedResidentIds: [],
       rejectedEmployeeIds: [],
+      expiresAt: this.newRingingExpiry(),
     });
     const saved = await this.callSessionsRepository.save(call);
     return this.getPayload(saved.id);
@@ -113,7 +133,10 @@ export class CallsService {
     ]);
 
     const porterById = new Map(porters.map((porter) => [porter.id, porter]));
-    const openCallByPorterId = new Map<string, CallPorterAvailabilityPayload['currentCall']>();
+    const openCallByPorterId = new Map<
+      string,
+      CallPorterAvailabilityPayload['currentCall']
+    >();
 
     openCalls.forEach((call) => {
       this.getEmployeeParticipantIds(call).forEach((employeeId) => {
@@ -141,10 +164,13 @@ export class CallsService {
     });
   }
 
-  async getCallHistory(query: CallHistoryFilters = {}): Promise<PaginatedResponse<CallSessionPayload>> {
+  async getCallHistory(
+    query: CallHistoryFilters = {},
+  ): Promise<PaginatedResponse<CallSessionPayload>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const qb = this.callSessionsRepository.createQueryBuilder('cs')
+    const qb = this.callSessionsRepository
+      .createQueryBuilder('cs')
       .leftJoinAndSelect('cs.apartment', 'apartment')
       .leftJoinAndSelect('apartment.towerData', 'towerData')
       .leftJoinAndSelect('cs.initiatedByEmployee', 'initiatedByEmployee')
@@ -154,7 +180,10 @@ export class CallsService {
 
     if (query.search) {
       const q = `%${query.search}%`;
-      qb.andWhere('(initiatedByEmployee.name ILIKE :q OR initiatedByEmployee.last_name ILIKE :q OR initiatedByResident.name ILIKE :q OR initiatedByResident.last_name ILIKE :q OR apartment.number ILIKE :q)', { q });
+      qb.andWhere(
+        '(initiatedByEmployee.name ILIKE :q OR initiatedByEmployee.last_name ILIKE :q OR initiatedByResident.name ILIKE :q OR initiatedByResident.last_name ILIKE :q OR apartment.number ILIKE :q)',
+        { q },
+      );
     }
     if (query.status) {
       qb.andWhere('cs.status = :status', { status: query.status });
@@ -167,7 +196,11 @@ export class CallsService {
       if (startDate) qb.andWhere('cs.created_at >= :startDate', { startDate });
     }
 
-    const [calls, total] = await qb.orderBy('cs.createdAt', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
+    const [calls, total] = await qb
+      .orderBy('cs.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
 
     const callIds = calls.map((call) => call.id);
     const timelineByCallId = new Map<string, CallTimelineEventPayload[]>();
@@ -183,7 +216,9 @@ export class CallsService {
       });
     }
 
-    const data = calls.map((call) => this.toCallPayload(call, timelineByCallId.get(call.id) ?? []));
+    const data = calls.map((call) =>
+      this.toCallPayload(call, timelineByCallId.get(call.id) ?? []),
+    );
     return paginate(data, total, page, limit);
   }
 
@@ -198,21 +233,26 @@ export class CallsService {
       metadata?: Record<string, unknown> | null;
     },
   ) {
-    const call = await this.callSessionsRepository.findOne({ where: { id: callId } });
+    const call = await this.callSessionsRepository.findOne({
+      where: { id: callId },
+    });
     if (!call) {
       throw new NotFoundException(`Call #${callId} not found`);
     }
 
-    const isAllowed = user.type === 'employee'
-      ? call.initiatedByEmployeeId === user.sub ||
-        call.acceptedByEmployeeId === user.sub ||
-        (call.targetEmployeeIds ?? []).includes(user.sub)
-      : call.initiatedByResidentId === user.sub ||
-        call.acceptedByResidentId === user.sub ||
-        (call.targetResidentIds ?? []).includes(user.sub);
+    const isAllowed =
+      user.type === 'employee'
+        ? call.initiatedByEmployeeId === user.sub ||
+          call.acceptedByEmployeeId === user.sub ||
+          (call.targetEmployeeIds ?? []).includes(user.sub)
+        : call.initiatedByResidentId === user.sub ||
+          call.acceptedByResidentId === user.sub ||
+          (call.targetResidentIds ?? []).includes(user.sub);
 
     if (!isAllowed) {
-      throw new ForbiddenException('El usuario autenticado no participa en esta llamada');
+      throw new ForbiddenException(
+        'El usuario autenticado no participa en esta llamada',
+      );
     }
 
     await this.recordTrace(call.id, {
@@ -242,7 +282,9 @@ export class CallsService {
       return;
     }
 
-    const exists = await this.callSessionsRepository.exist({ where: { id: callId } });
+    const exists = await this.callSessionsRepository.exist({
+      where: { id: callId },
+    });
     if (!exists) {
       return;
     }
@@ -276,7 +318,9 @@ export class CallsService {
       .andWhere('role.code = :roleCode', { roleCode: 'porter' })
       .getOne();
     if (!porter) {
-      throw new NotFoundException('El portero seleccionado no existe o no está activo');
+      throw new NotFoundException(
+        'El portero seleccionado no existe o no está activo',
+      );
     }
     await this.assertEmployeeAvailable(
       porter.id,
@@ -294,24 +338,34 @@ export class CallsService {
       targetEmployeeIds: [porter.id],
       rejectedResidentIds: [],
       rejectedEmployeeIds: [],
+      expiresAt: this.newRingingExpiry(),
     });
     const saved = await this.callSessionsRepository.save(call);
     return this.getPayload(saved.id);
   }
 
-  async createInternalPorterCall(input: { initiatedByEmployeeId: string; targetEmployeeId: string }) {
+  async createInternalPorterCall(input: {
+    initiatedByEmployeeId: string;
+    targetEmployeeId: string;
+  }) {
     if (input.initiatedByEmployeeId === input.targetEmployeeId) {
       throw new ConflictException('No puedes llamarte a ti mismo');
     }
 
-    const initiator = await this.getActivePorterById(input.initiatedByEmployeeId);
+    const initiator = await this.getActivePorterById(
+      input.initiatedByEmployeeId,
+    );
     if (!initiator) {
-      throw new NotFoundException('El portero que inicia la llamada no existe o no está activo');
+      throw new NotFoundException(
+        'El portero que inicia la llamada no existe o no está activo',
+      );
     }
 
     const target = await this.getActivePorterById(input.targetEmployeeId);
     if (!target) {
-      throw new NotFoundException('El portero seleccionado no existe o no está activo');
+      throw new NotFoundException(
+        'El portero seleccionado no existe o no está activo',
+      );
     }
 
     await this.assertEmployeeAvailable(
@@ -332,76 +386,132 @@ export class CallsService {
       targetEmployeeIds: [target.id],
       rejectedResidentIds: [],
       rejectedEmployeeIds: [],
+      expiresAt: this.newRingingExpiry(),
     });
     const saved = await this.callSessionsRepository.save(call);
     return this.getPayload(saved.id);
   }
 
-  async acceptCall(callId: string, actor: { id: string; type: JwtPayload['type'] }) {
-    const call = await this.callSessionsRepository.findOne({ where: { id: callId } });
+  async acceptCall(
+    callId: string,
+    actor: { id: string; type: JwtPayload['type'] },
+  ) {
+    const call = await this.callSessionsRepository.findOne({
+      where: { id: callId },
+    });
     if (!call) {
       throw new NotFoundException(`Call #${callId} not found`);
+    }
+
+    // An accept event can arrive more than once (or late) through a native push.
+    // Never let a terminal session transition back to active, even when the same
+    // participant had already accepted it before it ended.
+    if (call.status !== 'ringing') {
+      throw new ConflictException('La llamada ya no esta disponible');
     }
 
     if (call.direction === 'outbound') {
       // Resident accepts employee-initiated call
       if (actor.type !== 'resident') {
-        throw new ForbiddenException('Solo residentes pueden contestar esta llamada');
+        throw new ForbiddenException(
+          'Solo residentes pueden contestar esta llamada',
+        );
       }
       const residentId = actor.id;
       if (!(call.targetResidentIds ?? []).includes(residentId)) {
-        throw new ForbiddenException('Esta llamada no pertenece al residente autenticado');
+        throw new ForbiddenException(
+          'Esta llamada no pertenece al residente autenticado',
+        );
       }
-      if (call.acceptedByResidentId && call.acceptedByResidentId !== residentId) {
-        throw new ConflictException('La llamada ya fue atendida por otro residente');
+      if (
+        call.acceptedByResidentId &&
+        call.acceptedByResidentId !== residentId
+      ) {
+        throw new ConflictException(
+          'La llamada ya fue atendida por otro residente',
+        );
       }
-      if (call.status !== 'ringing' && call.acceptedByResidentId !== residentId) {
+      const acceptedAt = new Date();
+      const result = await this.callSessionsRepository
+        .createQueryBuilder()
+        .update(CallSession)
+        .set({
+          acceptedByResidentId: residentId,
+          acceptedAt,
+          status: 'active',
+        })
+        .where('id = :callId', { callId })
+        .andWhere('status = :status', { status: 'ringing' })
+        .execute();
+      if (!result.affected) {
         throw new ConflictException('La llamada ya no esta disponible');
       }
-      call.acceptedByResidentId = residentId;
-      call.acceptedAt = call.acceptedAt ?? new Date();
-      call.status = 'active';
     } else {
       // Employee accepts resident-initiated or internal porter call
       if (actor.type !== 'employee') {
-        throw new ForbiddenException('Solo empleados pueden contestar esta llamada');
+        throw new ForbiddenException(
+          'Solo empleados pueden contestar esta llamada',
+        );
       }
       const employeeId = actor.id;
       if (!(call.targetEmployeeIds ?? []).includes(employeeId)) {
-        throw new ForbiddenException('Esta llamada no pertenece al empleado autenticado');
+        throw new ForbiddenException(
+          'Esta llamada no pertenece al empleado autenticado',
+        );
       }
       await this.assertEmployeeAvailable(
         employeeId,
         'El empleado ya está atendiendo otra llamada',
         call.id,
       );
-      if (call.acceptedByEmployeeId && call.acceptedByEmployeeId !== employeeId) {
-        throw new ConflictException('La llamada ya fue atendida por otro portero');
+      if (
+        call.acceptedByEmployeeId &&
+        call.acceptedByEmployeeId !== employeeId
+      ) {
+        throw new ConflictException(
+          'La llamada ya fue atendida por otro portero',
+        );
       }
-      if (call.status !== 'ringing' && call.acceptedByEmployeeId !== employeeId) {
+      const acceptedAt = new Date();
+      const result = await this.callSessionsRepository
+        .createQueryBuilder()
+        .update(CallSession)
+        .set({
+          acceptedByEmployeeId: employeeId,
+          acceptedAt,
+          status: 'active',
+        })
+        .where('id = :callId', { callId })
+        .andWhere('status = :status', { status: 'ringing' })
+        .execute();
+      if (!result.affected) {
         throw new ConflictException('La llamada ya no esta disponible');
       }
-      call.acceptedByEmployeeId = employeeId;
-      call.acceptedAt = call.acceptedAt ?? new Date();
-      call.status = 'active';
     }
-
-    await this.callSessionsRepository.save(call);
     return this.getPayload(call.id);
   }
 
-  async rejectCall(callId: string, actor: { id: string; type: JwtPayload['type'] }) {
-    const call = await this.callSessionsRepository.findOne({ where: { id: callId } });
+  async rejectCall(
+    callId: string,
+    actor: { id: string; type: JwtPayload['type'] },
+  ) {
+    const call = await this.callSessionsRepository.findOne({
+      where: { id: callId },
+    });
     if (!call) {
       throw new NotFoundException(`Call #${callId} not found`);
     }
 
     if (call.direction === 'outbound') {
       if (actor.type !== 'resident') {
-        throw new ForbiddenException('Solo residentes pueden rechazar esta llamada');
+        throw new ForbiddenException(
+          'Solo residentes pueden rechazar esta llamada',
+        );
       }
       if (!(call.targetResidentIds ?? []).includes(actor.id)) {
-        throw new ForbiddenException('Esta llamada no pertenece al residente autenticado');
+        throw new ForbiddenException(
+          'Esta llamada no pertenece al residente autenticado',
+        );
       }
       if (call.status !== 'ringing') {
         return { terminal: true, call: await this.getPayload(call.id) };
@@ -411,7 +521,9 @@ export class CallsService {
       rejected.add(actor.id);
       call.rejectedResidentIds = Array.from(rejected);
 
-      const terminal = call.rejectedResidentIds.length >= (call.targetResidentIds ?? []).length;
+      const terminal =
+        call.rejectedResidentIds.length >=
+        (call.targetResidentIds ?? []).length;
       if (terminal) {
         call.status = 'rejected';
         call.endedReason = 'rejected';
@@ -419,10 +531,14 @@ export class CallsService {
       }
     } else {
       if (actor.type !== 'employee') {
-        throw new ForbiddenException('Solo empleados pueden rechazar esta llamada');
+        throw new ForbiddenException(
+          'Solo empleados pueden rechazar esta llamada',
+        );
       }
       if (!(call.targetEmployeeIds ?? []).includes(actor.id)) {
-        throw new ForbiddenException('Esta llamada no pertenece al empleado autenticado');
+        throw new ForbiddenException(
+          'Esta llamada no pertenece al empleado autenticado',
+        );
       }
       if (call.status !== 'ringing') {
         return { terminal: true, call: await this.getPayload(call.id) };
@@ -432,7 +548,9 @@ export class CallsService {
       rejected.add(actor.id);
       call.rejectedEmployeeIds = Array.from(rejected);
 
-      const terminal = call.rejectedEmployeeIds.length >= (call.targetEmployeeIds ?? []).length;
+      const terminal =
+        call.rejectedEmployeeIds.length >=
+        (call.targetEmployeeIds ?? []).length;
       if (terminal) {
         call.status = 'rejected';
         call.endedReason = 'rejected';
@@ -441,21 +559,37 @@ export class CallsService {
     }
 
     await this.callSessionsRepository.save(call);
-    return { terminal: call.status === 'rejected', call: await this.getPayload(call.id) };
+    return {
+      terminal: call.status === 'rejected',
+      call: await this.getPayload(call.id),
+    };
   }
 
   async timeoutCall(callId: string) {
-    const call = await this.callSessionsRepository.findOne({ where: { id: callId } });
-    if (!call || call.status !== 'ringing') {
+    const result = await this.callSessionsRepository
+      .createQueryBuilder()
+      .update(CallSession)
+      .set({ status: 'missed', endedAt: new Date(), endedReason: 'timeout' })
+      .where('id = :callId', { callId })
+      .andWhere('status = :status', { status: 'ringing' })
+      .execute();
+    if (!result.affected) {
       return null;
     }
+    return this.getPayload(callId);
+  }
 
-    call.status = 'missed';
-    call.endedAt = new Date();
-    call.endedReason = 'timeout';
-    await this.callSessionsRepository.save(call);
-
-    return this.getPayload(call.id);
+  async expireRingingCalls(now = new Date()): Promise<CallSessionPayload[]> {
+    const expired = await this.callSessionsRepository.find({
+      where: { status: 'ringing', expiresAt: LessThanOrEqual(now) },
+      select: { id: true },
+    });
+    const results: CallSessionPayload[] = [];
+    for (const call of expired) {
+      const payload = await this.timeoutCall(call.id);
+      if (payload) results.push(payload);
+    }
+    return results;
   }
 
   async endCall(
@@ -463,17 +597,37 @@ export class CallsService {
     actor: { id: string; type: JwtPayload['type'] },
     reason?: string,
   ) {
-    const call = await this.callSessionsRepository.findOne({ where: { id: callId } });
+    const call = await this.callSessionsRepository.findOne({
+      where: { id: callId },
+    });
     if (!call) {
       throw new NotFoundException(`Call #${callId} not found`);
     }
 
-    const isOutboundInitiator = call.direction === 'outbound' && actor.type === 'employee' && call.initiatedByEmployeeId === actor.id;
-    const isInboundInitiator = call.direction === 'inbound' && actor.type === 'resident' && call.initiatedByResidentId === actor.id;
-    const isInternalInitiator = call.direction === 'internal' && actor.type === 'employee' && call.initiatedByEmployeeId === actor.id;
-    const isOutboundAcceptor = call.direction === 'outbound' && actor.type === 'resident' && call.acceptedByResidentId === actor.id;
-    const isInboundAcceptor = call.direction === 'inbound' && actor.type === 'employee' && call.acceptedByEmployeeId === actor.id;
-    const isInternalAcceptor = call.direction === 'internal' && actor.type === 'employee' && call.acceptedByEmployeeId === actor.id;
+    const isOutboundInitiator =
+      call.direction === 'outbound' &&
+      actor.type === 'employee' &&
+      call.initiatedByEmployeeId === actor.id;
+    const isInboundInitiator =
+      call.direction === 'inbound' &&
+      actor.type === 'resident' &&
+      call.initiatedByResidentId === actor.id;
+    const isInternalInitiator =
+      call.direction === 'internal' &&
+      actor.type === 'employee' &&
+      call.initiatedByEmployeeId === actor.id;
+    const isOutboundAcceptor =
+      call.direction === 'outbound' &&
+      actor.type === 'resident' &&
+      call.acceptedByResidentId === actor.id;
+    const isInboundAcceptor =
+      call.direction === 'inbound' &&
+      actor.type === 'employee' &&
+      call.acceptedByEmployeeId === actor.id;
+    const isInternalAcceptor =
+      call.direction === 'internal' &&
+      actor.type === 'employee' &&
+      call.acceptedByEmployeeId === actor.id;
 
     if (
       !isOutboundInitiator &&
@@ -483,9 +637,15 @@ export class CallsService {
       !isInboundAcceptor &&
       !isInternalAcceptor
     ) {
-      throw new ForbiddenException('El usuario autenticado no puede finalizar esta llamada');
+      throw new ForbiddenException(
+        'El usuario autenticado no puede finalizar esta llamada',
+      );
     }
-    if (call.status === 'ended' || call.status === 'missed' || call.status === 'rejected') {
+    if (
+      call.status === 'ended' ||
+      call.status === 'missed' ||
+      call.status === 'rejected'
+    ) {
       return this.getPayload(call.id);
     }
 
@@ -498,13 +658,13 @@ export class CallsService {
       ((call.direction === 'inbound' || call.direction === 'internal') &&
         Boolean(call.acceptedByEmployeeId));
 
-    call.endedReason = reason ?? (
-      hasAcceptedParticipant
+    call.endedReason =
+      reason ??
+      (hasAcceptedParticipant
         ? 'completed'
         : actor.type === 'employee' || isInboundInitiator
           ? 'cancelled'
-          : 'rejected'
-    );
+          : 'rejected');
 
     await this.callSessionsRepository.save(call);
     return this.getPayload(call.id);
@@ -575,30 +735,56 @@ export class CallsService {
     const linkedApartments = await this.residentApartmentsRepository.find({
       where: [
         { residentId, endDate: IsNull() },
-        { residentId, endDate: MoreThanOrEqual(new Date().toISOString().slice(0, 10)) },
+        {
+          residentId,
+          endDate: MoreThanOrEqual(new Date().toISOString().slice(0, 10)),
+        },
       ],
       select: { apartmentId: true, residentId: true, id: true },
     });
 
     return Array.from(
       new Set(
-        [resident?.apartmentId, ...linkedApartments.map((item) => item.apartmentId)].filter(Boolean),
+        [
+          resident?.apartmentId,
+          ...linkedApartments.map((item) => item.apartmentId),
+        ].filter(Boolean),
       ),
     ) as string[];
   }
 
   async ensureCanSignal(callId: string, actor: JwtPayload) {
-    const call = await this.callSessionsRepository.findOne({ where: { id: callId } });
+    const call = await this.callSessionsRepository.findOne({
+      where: { id: callId },
+    });
     if (!call) {
       throw new NotFoundException(`Call #${callId} not found`);
     }
 
-    const isOutboundInitiator = call.direction === 'outbound' && actor.type === 'employee' && call.initiatedByEmployeeId === actor.sub;
-    const isInboundInitiator = call.direction === 'inbound' && actor.type === 'resident' && call.initiatedByResidentId === actor.sub;
-    const isInternalInitiator = call.direction === 'internal' && actor.type === 'employee' && call.initiatedByEmployeeId === actor.sub;
-    const isOutboundAcceptor = call.direction === 'outbound' && actor.type === 'resident' && call.acceptedByResidentId === actor.sub;
-    const isInboundAcceptor = call.direction === 'inbound' && actor.type === 'employee' && call.acceptedByEmployeeId === actor.sub;
-    const isInternalAcceptor = call.direction === 'internal' && actor.type === 'employee' && call.acceptedByEmployeeId === actor.sub;
+    const isOutboundInitiator =
+      call.direction === 'outbound' &&
+      actor.type === 'employee' &&
+      call.initiatedByEmployeeId === actor.sub;
+    const isInboundInitiator =
+      call.direction === 'inbound' &&
+      actor.type === 'resident' &&
+      call.initiatedByResidentId === actor.sub;
+    const isInternalInitiator =
+      call.direction === 'internal' &&
+      actor.type === 'employee' &&
+      call.initiatedByEmployeeId === actor.sub;
+    const isOutboundAcceptor =
+      call.direction === 'outbound' &&
+      actor.type === 'resident' &&
+      call.acceptedByResidentId === actor.sub;
+    const isInboundAcceptor =
+      call.direction === 'inbound' &&
+      actor.type === 'employee' &&
+      call.acceptedByEmployeeId === actor.sub;
+    const isInternalAcceptor =
+      call.direction === 'internal' &&
+      actor.type === 'employee' &&
+      call.acceptedByEmployeeId === actor.sub;
 
     if (
       !isOutboundInitiator &&
@@ -608,7 +794,9 @@ export class CallsService {
       !isInboundAcceptor &&
       !isInternalAcceptor
     ) {
-      throw new ForbiddenException('El usuario autenticado no participa en esta llamada');
+      throw new ForbiddenException(
+        'El usuario autenticado no participa en esta llamada',
+      );
     }
 
     if (call.status !== 'active') {
@@ -618,26 +806,41 @@ export class CallsService {
     return call;
   }
 
-  getSignalTarget(call: CallSession, actor: JwtPayload): { sub: string; type: JwtPayload['type'] } | null {
+  getSignalTarget(
+    call: CallSession,
+    actor: JwtPayload,
+  ): { sub: string; type: JwtPayload['type'] } | null {
     if (call.direction === 'outbound') {
       if (actor.type === 'employee') {
-        return call.acceptedByResidentId ? { sub: call.acceptedByResidentId, type: 'resident' } : null;
+        return call.acceptedByResidentId
+          ? { sub: call.acceptedByResidentId, type: 'resident' }
+          : null;
       }
-      return call.initiatedByEmployeeId ? { sub: call.initiatedByEmployeeId, type: 'employee' } : null;
+      return call.initiatedByEmployeeId
+        ? { sub: call.initiatedByEmployeeId, type: 'employee' }
+        : null;
     }
 
     if (call.direction === 'inbound') {
       if (actor.type === 'resident') {
-        return call.acceptedByEmployeeId ? { sub: call.acceptedByEmployeeId, type: 'employee' } : null;
+        return call.acceptedByEmployeeId
+          ? { sub: call.acceptedByEmployeeId, type: 'employee' }
+          : null;
       }
-      return call.initiatedByResidentId ? { sub: call.initiatedByResidentId, type: 'resident' } : null;
+      return call.initiatedByResidentId
+        ? { sub: call.initiatedByResidentId, type: 'resident' }
+        : null;
     }
 
     if (actor.sub === call.initiatedByEmployeeId) {
-      return call.acceptedByEmployeeId ? { sub: call.acceptedByEmployeeId, type: 'employee' } : null;
+      return call.acceptedByEmployeeId
+        ? { sub: call.acceptedByEmployeeId, type: 'employee' }
+        : null;
     }
 
-    return call.initiatedByEmployeeId ? { sub: call.initiatedByEmployeeId, type: 'employee' } : null;
+    return call.initiatedByEmployeeId
+      ? { sub: call.initiatedByEmployeeId, type: 'employee' }
+      : null;
   }
 
   getIceServers(): IceServerConfig[] {
@@ -653,19 +856,21 @@ export class CallsService {
 
     const fallback: IceServerConfig[] = [
       {
-        urls: [
-          'stun:stun.l.google.com:19302',
-          'stun:stun1.l.google.com:19302',
-        ],
+        urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'],
       },
     ];
 
     const turnUrls = this.configService.get<string>('WEBRTC_TURN_URLS');
     const turnUsername = this.configService.get<string>('WEBRTC_TURN_USERNAME');
-    const turnCredential = this.configService.get<string>('WEBRTC_TURN_CREDENTIAL');
+    const turnCredential = this.configService.get<string>(
+      'WEBRTC_TURN_CREDENTIAL',
+    );
     if (turnUrls && turnUsername && turnCredential) {
       fallback.push({
-        urls: turnUrls.split(',').map((item) => item.trim()).filter(Boolean),
+        urls: turnUrls
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean),
         username: turnUsername,
         credential: turnCredential,
       });
@@ -674,19 +879,27 @@ export class CallsService {
     return fallback;
   }
 
+  private newRingingExpiry() {
+    return new Date(Date.now() + this.ringingTimeoutMs);
+  }
+
   private async getTargetResidentIdsForApartment(apartmentId: string) {
     const directResidents = await this.residentsRepository.find({
       where: { apartmentId, isActive: true },
       select: { id: true },
     });
 
-    const linkedResidentRelations = await this.residentApartmentsRepository.find({
-      where: [
-        { apartmentId, endDate: IsNull() },
-        { apartmentId, endDate: MoreThanOrEqual(new Date().toISOString().slice(0, 10)) },
-      ],
-      select: { residentId: true },
-    });
+    const linkedResidentRelations =
+      await this.residentApartmentsRepository.find({
+        where: [
+          { apartmentId, endDate: IsNull() },
+          {
+            apartmentId,
+            endDate: MoreThanOrEqual(new Date().toISOString().slice(0, 10)),
+          },
+        ],
+        select: { residentId: true },
+      });
 
     const residentIds = Array.from(
       new Set([
@@ -732,17 +945,25 @@ export class CallsService {
     porterId: string,
     porterById: Map<string, Employee>,
   ): CallPorterAvailabilityPayload['currentCall'] {
-    const apartment = call.apartment ? this.toApartmentSummary(call.apartment) : null;
+    const apartment = call.apartment
+      ? this.toApartmentSummary(call.apartment)
+      : null;
 
     if (call.direction === 'internal') {
       const counterpartId =
         porterId === call.initiatedByEmployeeId
-          ? call.acceptedByEmployeeId ?? (call.targetEmployeeIds ?? []).find((id) => id !== porterId) ?? null
+          ? (call.acceptedByEmployeeId ??
+            (call.targetEmployeeIds ?? []).find((id) => id !== porterId) ??
+            null)
           : call.initiatedByEmployeeId;
       const counterpart =
         (counterpartId && porterById.get(counterpartId)) ??
-        (counterpartId === call.initiatedByEmployee?.id ? call.initiatedByEmployee : null) ??
-        (counterpartId === call.acceptedByEmployee?.id ? call.acceptedByEmployee : null);
+        (counterpartId === call.initiatedByEmployee?.id
+          ? call.initiatedByEmployee
+          : null) ??
+        (counterpartId === call.acceptedByEmployee?.id
+          ? call.acceptedByEmployee
+          : null);
 
       return {
         callId: call.id,
@@ -803,7 +1024,9 @@ export class CallsService {
       status: call.status,
       direction: call.direction,
       apartmentId: call.apartmentId,
-      apartment: call.apartment ? this.toApartmentSummary(call.apartment) : null,
+      apartment: call.apartment
+        ? this.toApartmentSummary(call.apartment)
+        : null,
       initiatedByEmployeeId: call.initiatedByEmployeeId,
       initiatedByEmployee: call.initiatedByEmployee
         ? {
@@ -846,6 +1069,7 @@ export class CallsService {
       createdAt: call.createdAt.toISOString(),
       acceptedAt: call.acceptedAt?.toISOString() ?? null,
       endedAt: call.endedAt?.toISOString() ?? null,
+      expiresAt: call.expiresAt?.toISOString() ?? null,
       timeline,
     };
   }

@@ -1,5 +1,19 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
-import { IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  IsIn,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AdminOrPorterGuard } from '../common/guards/admin-or-porter.guard';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -15,8 +29,8 @@ class RegisterCallDeviceDto {
   @IsIn(['android', 'ios'])
   platform: 'android' | 'ios';
 
-  @IsIn(['fcm', 'voip'])
-  channel: 'fcm' | 'voip';
+  @IsIn(['fcm', 'hms', 'voip'])
+  channel: 'fcm' | 'hms' | 'voip';
 
   @IsOptional()
   @IsIn(['development', 'production', null])
@@ -41,8 +55,8 @@ class UnregisterCallDeviceDto {
   platform?: 'android' | 'ios';
 
   @IsOptional()
-  @IsIn(['fcm', 'voip'])
-  channel?: 'fcm' | 'voip';
+  @IsIn(['fcm', 'hms', 'voip'])
+  channel?: 'fcm' | 'hms' | 'voip';
 
   @IsOptional()
   @IsString()
@@ -96,7 +110,14 @@ export class CallsController {
     @Query('direction') direction?: string,
     @Query('createdAt') createdAt?: string,
   ) {
-    return this.callsService.getCallHistory({ page: page ? +page : 1, limit: limit ? +limit : 15, search, status, direction, createdAt });
+    return this.callsService.getCallHistory({
+      page: page ? +page : 1,
+      limit: limit ? +limit : 15,
+      search,
+      status,
+      direction,
+      createdAt,
+    });
   }
 
   @Get('ice-config')
@@ -107,7 +128,10 @@ export class CallsController {
   }
 
   @Post('devices')
-  async registerDevice(@CurrentUser() user: JwtPayload, @Body() dto: RegisterCallDeviceDto) {
+  async registerDevice(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: RegisterCallDeviceDto,
+  ) {
     if (!dto?.token || !dto?.platform || !dto?.channel) {
       throw new BadRequestException('token, platform y channel son requeridos');
     }
@@ -117,15 +141,23 @@ export class CallsController {
   }
 
   @Post('devices/unregister')
-  async unregisterDevice(@CurrentUser() user: JwtPayload, @Body() dto: UnregisterCallDeviceDto = {}) {
+  async unregisterDevice(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UnregisterCallDeviceDto = {},
+  ) {
     await this.callsPushService.unregisterDevice(user, dto);
     return { ok: true };
   }
 
   @Post('trace')
-  async createTrace(@CurrentUser() user: JwtPayload, @Body() dto: CreateCallTraceDto) {
+  async createTrace(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CreateCallTraceDto,
+  ) {
     if (!dto?.callId || !dto?.source || !dto?.stage || !dto?.message) {
-      throw new BadRequestException('callId, source, stage y message son requeridos');
+      throw new BadRequestException(
+        'callId, source, stage y message son requeridos',
+      );
     }
     await this.callsService.createTraceForUser(dto.callId, user, dto);
     return { ok: true };

@@ -79,6 +79,7 @@ import { ErrorLog } from './error-logs/entities/error-log.entity';
 import { CallDevice } from './calls/entities/call-device.entity';
 import { CallSession } from './calls/entities/call-session.entity';
 import { CallTraceEvent } from './calls/entities/call-trace-event.entity';
+import { CallPushJob } from './calls/entities/call-push-job.entity';
 import { FineType } from './fines/entities/fine-type.entity';
 import { Fine } from './fines/entities/fine.entity';
 
@@ -101,7 +102,7 @@ import { Fine } from './fines/entities/fine.entity';
           ReservationStatus, NotificationType, Tower, Apartment, Resident,
           Employee, Visitor, Vehicle, ResidentApartment, AccessAudit,
           PoolEntry, PoolEntryGuest, PoolEntryResident, CommonArea, Reservation, Package, PackagePhoto, Notification, SystemLog,
-          NewsCategory, News, CommunitySpace, CommunitySpaceSchedule, CallDevice, CallSession, CallTraceEvent,
+          NewsCategory, News, CommunitySpace, CommunitySpaceSchedule, CallDevice, CallSession, CallTraceEvent, CallPushJob,
           FineType, Fine,
           ResidentVehicle,
           Assembly, AssemblyQuestion, AssemblyVote, AssemblyResidentToken,

@@ -12,6 +12,7 @@ import { CallsService } from './calls.service';
 import { CallDevice } from './entities/call-device.entity';
 import { CallSession } from './entities/call-session.entity';
 import { CallTraceEvent } from './entities/call-trace-event.entity';
+import { CallPushJob } from './entities/call-push-job.entity';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { CallTraceEvent } from './entities/call-trace-event.entity';
       CallSession,
       CallDevice,
       CallTraceEvent,
+      CallPushJob,
       Apartment,
       Employee,
       Resident,

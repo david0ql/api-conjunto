@@ -1,8 +1,15 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import type { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 
 export type CallDevicePlatform = 'android' | 'ios';
-export type CallDeviceChannel = 'fcm' | 'voip';
+export type CallDeviceChannel = 'fcm' | 'hms' | 'voip';
 export type CallDeviceEnvironment = 'development' | 'production';
 
 @Entity('call_devices')
@@ -27,7 +34,12 @@ export class CallDevice {
   @Column({ type: 'text' })
   token: string;
 
-  @Column({ name: 'push_environment', type: 'varchar', length: 20, nullable: true })
+  @Column({
+    name: 'push_environment',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
   pushEnvironment: CallDeviceEnvironment | null;
 
   @Column({ name: 'device_id', type: 'varchar', length: 120, nullable: true })

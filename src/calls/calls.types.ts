@@ -1,5 +1,8 @@
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
-import type { CallDirection, CallSessionStatus } from './entities/call-session.entity';
+import type {
+  CallDirection,
+  CallSessionStatus,
+} from './entities/call-session.entity';
 
 export interface IceServerConfig {
   urls: string | string[];
@@ -77,6 +80,7 @@ export interface CallSessionPayload {
   createdAt: string;
   acceptedAt: string | null;
   endedAt: string | null;
+  expiresAt: string | null;
   timeline?: CallTimelineEventPayload[];
 }
 

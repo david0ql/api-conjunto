@@ -1,6 +1,7 @@
 import {
   ConnectedSocket,
   MessageBody,
+  OnGatewayInit,
   OnGatewayConnection,
   OnGatewayDisconnect,
   SubscribeMessage,
@@ -9,6 +10,7 @@ import {
 } from '@nestjs/websockets';
 import { JwtService } from '@nestjs/jwt';
 import { Logger, UsePipes, ValidationPipe } from '@nestjs/common';
+import { OnModuleDestroy } from '@nestjs/common';
 import { WsException } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
@@ -31,7 +33,13 @@ type SocketWithUser = Socket & { data: { user?: JwtPayload } };
     forbidNonWhitelisted: false,
   }),
 )
-export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class CallsGateway
+  implements
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnGatewayInit,
+    OnModuleDestroy
+{
   @WebSocketServer()
   server: Server;
 
@@ -39,13 +47,30 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly socketsByUserKey = new Map<string, Set<string>>();
   private readonly userBySocketId = new Map<string, JwtPayload>();
   private readonly timeoutByCallId = new Map<string, NodeJS.Timeout>();
-  private readonly disconnectCleanupByUserKey = new Map<string, NodeJS.Timeout>();
+  private readonly disconnectCleanupByUserKey = new Map<
+    string,
+    NodeJS.Timeout
+  >();
+  private reaperInterval: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly callsService: CallsService,
     private readonly callsPushService: CallsPushService,
     private readonly jwtService: JwtService,
   ) {}
+
+  afterInit() {
+    void this.reconcileExpiredCalls();
+    this.reaperInterval = setInterval(
+      () => void this.reconcileExpiredCalls(),
+      10_000,
+    );
+    this.reaperInterval.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.reaperInterval) clearInterval(this.reaperInterval);
+  }
 
   async handleConnection(client: SocketWithUser) {
     try {
@@ -56,14 +81,24 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       client.join(this.userRoom(user));
       if (user.type === 'resident') {
-        const apartmentIds = await this.callsService.getApartmentIdsForResident(user.sub);
-        apartmentIds.forEach((apartmentId) => client.join(this.apartmentRoom(apartmentId)));
+        const apartmentIds = await this.callsService.getApartmentIdsForResident(
+          user.sub,
+        );
+        apartmentIds.forEach((apartmentId) =>
+          client.join(this.apartmentRoom(apartmentId)),
+        );
       }
 
-      this.logger.log(`Realtime client connected ${client.id} (${user.type}:${user.sub})`);
+      this.logger.log(
+        `Realtime client connected ${client.id} (${user.type}:${user.sub})`,
+      );
     } catch (error) {
-      this.logger.warn(`Rejected socket ${client.id}: ${this.getErrorMessage(error)}`);
-      client.emit('calls:error', { message: 'No fue posible autenticar el canal en tiempo real' });
+      this.logger.warn(
+        `Rejected socket ${client.id}: ${this.getErrorMessage(error)}`,
+      );
+      client.emit('calls:error', {
+        message: 'No fue posible autenticar el canal en tiempo real',
+      });
       client.disconnect(true);
     }
   }
@@ -88,8 +123,13 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() body: { apartmentId?: string },
   ) {
     const user = this.requireUser(client);
-    if (user.type !== 'employee' || !['administrator', 'porter', 'pool_attendant'].includes(user.role ?? '')) {
-      throw new WsException('Solo administradores, porteria y piscina pueden iniciar llamadas');
+    if (
+      user.type !== 'employee' ||
+      !['administrator', 'porter', 'pool_attendant'].includes(user.role ?? '')
+    ) {
+      throw new WsException(
+        'Solo administradores, porteria y piscina pueden iniciar llamadas',
+      );
     }
     if (!body.apartmentId) {
       throw new WsException('apartmentId is required');
@@ -99,21 +139,25 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       apartmentId: body.apartmentId,
       initiatedByEmployeeId: user.sub,
     });
-    void this.callsService.recordTrace(call.id, {
-      source: 'api',
-      stage: 'call.created',
-      message: 'Llamada saliente creada desde web',
-      actorUserId: user.sub,
-      actorUserType: user.type,
-      metadata: { direction: call.direction, apartmentId: call.apartmentId },
-    }).catch(() => undefined);
+    void this.callsService
+      .recordTrace(call.id, {
+        source: 'api',
+        stage: 'call.created',
+        message: 'Llamada saliente creada desde web',
+        actorUserId: user.sub,
+        actorUserType: user.type,
+        metadata: { direction: call.direction, apartmentId: call.apartmentId },
+      })
+      .catch(() => undefined);
 
     client.join(this.callRoom(call.id));
     client.emit('calls:outgoing', call);
     (call.targetResidentIds ?? []).forEach((residentId) => {
-      this.server.to(this.userRoom({ sub: residentId, type: 'resident' })).emit('calls:incoming', call);
+      this.server
+        .to(this.userRoom({ sub: residentId, type: 'resident' }))
+        .emit('calls:incoming', call);
     });
-    await this.callsPushService.sendResidentIncomingCall(call);
+    await this.callsPushService.sendIncomingCall(call);
     await this.emitPorterAvailability();
     this.setTimeoutForCall(call.id);
   }
@@ -131,21 +175,29 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       throw new WsException('employeeId is required');
     }
 
-    const call = await this.callsService.createPorterCall(user.sub, body.employeeId);
-    void this.callsService.recordTrace(call.id, {
-      source: 'api',
-      stage: 'call.created',
-      message: 'Llamada residente -> portería creada',
-      actorUserId: user.sub,
-      actorUserType: user.type,
-      metadata: { direction: call.direction },
-    }).catch(() => undefined);
+    const call = await this.callsService.createPorterCall(
+      user.sub,
+      body.employeeId,
+    );
+    void this.callsService
+      .recordTrace(call.id, {
+        source: 'api',
+        stage: 'call.created',
+        message: 'Llamada residente -> portería creada',
+        actorUserId: user.sub,
+        actorUserType: user.type,
+        metadata: { direction: call.direction },
+      })
+      .catch(() => undefined);
 
     client.join(this.callRoom(call.id));
     client.emit('calls:outgoing', call);
     (call.targetEmployeeIds ?? []).forEach((employeeId) => {
-      this.server.to(this.userRoom({ sub: employeeId, type: 'employee' })).emit('calls:incoming', call);
+      this.server
+        .to(this.userRoom({ sub: employeeId, type: 'employee' }))
+        .emit('calls:incoming', call);
     });
+    await this.callsPushService.sendIncomingCall(call);
     await this.emitPorterAvailability();
     this.setTimeoutForCall(call.id);
   }
@@ -167,20 +219,25 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       initiatedByEmployeeId: user.sub,
       targetEmployeeId: body.employeeId,
     });
-    void this.callsService.recordTrace(call.id, {
-      source: 'api',
-      stage: 'call.created',
-      message: 'Llamada interna de portería creada',
-      actorUserId: user.sub,
-      actorUserType: user.type,
-      metadata: { direction: call.direction },
-    }).catch(() => undefined);
+    void this.callsService
+      .recordTrace(call.id, {
+        source: 'api',
+        stage: 'call.created',
+        message: 'Llamada interna de portería creada',
+        actorUserId: user.sub,
+        actorUserType: user.type,
+        metadata: { direction: call.direction },
+      })
+      .catch(() => undefined);
 
     client.join(this.callRoom(call.id));
     client.emit('calls:outgoing', call);
     (call.targetEmployeeIds ?? []).forEach((employeeId) => {
-      this.server.to(this.userRoom({ sub: employeeId, type: 'employee' })).emit('calls:incoming', call);
+      this.server
+        .to(this.userRoom({ sub: employeeId, type: 'employee' }))
+        .emit('calls:incoming', call);
     });
+    await this.callsPushService.sendIncomingCall(call);
     await this.emitPorterAvailability();
     this.setTimeoutForCall(call.id);
   }
@@ -195,23 +252,28 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       throw new WsException('callId is required');
     }
 
-    const call = await this.callsService.acceptCall(body.callId, { id: user.sub, type: user.type });
+    const call = await this.callsService.acceptCall(body.callId, {
+      id: user.sub,
+      type: user.type,
+    });
     this.clearTimeoutForCall(call.id);
-    void this.callsService.recordTrace(call.id, {
-      source: 'api',
-      stage: 'call.accepted',
-      message: 'Llamada aceptada',
-      actorUserId: user.sub,
-      actorUserType: user.type,
-      metadata: { direction: call.direction },
-    }).catch(() => undefined);
+    void this.callsService
+      .recordTrace(call.id, {
+        source: 'api',
+        stage: 'call.accepted',
+        message: 'Llamada aceptada',
+        actorUserId: user.sub,
+        actorUserType: user.type,
+        metadata: { direction: call.direction },
+      })
+      .catch(() => undefined);
 
     client.join(this.callRoom(call.id));
     this.emitAnsweredElsewhereToOtherUserSockets(client, user, call);
 
     if (call.direction === 'outbound') {
       this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
-      await this.callsPushService.sendResidentCallState(call, 'accepted');
+      await this.callsPushService.sendCallState(call, 'accepted');
       (call.targetResidentIds ?? [])
         .filter((residentId) => residentId !== user.sub)
         .forEach((residentId) => {
@@ -244,36 +306,65 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       throw new WsException('callId is required');
     }
 
-    const result = await this.callsService.rejectCall(body.callId, { id: user.sub, type: user.type });
+    const result = await this.callsService.rejectCall(body.callId, {
+      id: user.sub,
+      type: user.type,
+    });
 
     if (!result.terminal) {
-      void this.callsService.recordTrace(result.call.id, {
-        source: 'api',
-        stage: 'call.rejected.partial',
-        message: 'Un participante rechazó la llamada',
-        actorUserId: user.sub,
-        actorUserType: user.type,
-        metadata: { direction: result.call.direction },
-      }).catch(() => undefined);
-      if (result.call.direction === 'outbound' && result.call.initiatedByEmployeeId) {
+      void this.callsService
+        .recordTrace(result.call.id, {
+          source: 'api',
+          stage: 'call.rejected.partial',
+          message: 'Un participante rechazó la llamada',
+          actorUserId: user.sub,
+          actorUserType: user.type,
+          metadata: { direction: result.call.direction },
+        })
+        .catch(() => undefined);
+      if (
+        result.call.direction === 'outbound' &&
+        result.call.initiatedByEmployeeId
+      ) {
         this.server
-          .to(this.userRoom({ sub: result.call.initiatedByEmployeeId, type: 'employee' }))
+          .to(
+            this.userRoom({
+              sub: result.call.initiatedByEmployeeId,
+              type: 'employee',
+            }),
+          )
           .emit('calls:resident-rejected', {
             callId: result.call.id,
             residentId: user.sub,
             rejectedResidentIds: result.call.rejectedResidentIds,
           });
-      } else if (result.call.direction === 'inbound' && result.call.initiatedByResidentId) {
+      } else if (
+        result.call.direction === 'inbound' &&
+        result.call.initiatedByResidentId
+      ) {
         this.server
-          .to(this.userRoom({ sub: result.call.initiatedByResidentId, type: 'resident' }))
+          .to(
+            this.userRoom({
+              sub: result.call.initiatedByResidentId,
+              type: 'resident',
+            }),
+          )
           .emit('calls:porter-rejected', {
             callId: result.call.id,
             employeeId: user.sub,
             rejectedEmployeeIds: result.call.rejectedEmployeeIds,
           });
-      } else if (result.call.direction === 'internal' && result.call.initiatedByEmployeeId) {
+      } else if (
+        result.call.direction === 'internal' &&
+        result.call.initiatedByEmployeeId
+      ) {
         this.server
-          .to(this.userRoom({ sub: result.call.initiatedByEmployeeId, type: 'employee' }))
+          .to(
+            this.userRoom({
+              sub: result.call.initiatedByEmployeeId,
+              type: 'employee',
+            }),
+          )
           .emit('calls:employee-rejected', {
             callId: result.call.id,
             employeeId: user.sub,
@@ -285,16 +376,18 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     this.clearTimeoutForCall(result.call.id);
-    void this.callsService.recordTrace(result.call.id, {
-      source: 'api',
-      stage: 'call.rejected',
-      message: 'Llamada rechazada y cerrada',
-      actorUserId: user.sub,
-      actorUserType: user.type,
-      metadata: { direction: result.call.direction },
-    }).catch(() => undefined);
+    void this.callsService
+      .recordTrace(result.call.id, {
+        source: 'api',
+        stage: 'call.rejected',
+        message: 'Llamada rechazada y cerrada',
+        actorUserId: user.sub,
+        actorUserType: user.type,
+        metadata: { direction: result.call.direction },
+      })
+      .catch(() => undefined);
     this.emitCallTerminalState('calls:rejected', result.call);
-    await this.callsPushService.sendResidentCallState(result.call, 'rejected');
+    await this.callsPushService.sendCallState(result.call, 'rejected');
     await this.emitPorterAvailability();
   }
 
@@ -314,16 +407,18 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       body.reason,
     );
     this.clearTimeoutForCall(call.id);
-    void this.callsService.recordTrace(call.id, {
-      source: 'api',
-      stage: 'call.ended',
-      message: 'Llamada finalizada por participante',
-      actorUserId: user.sub,
-      actorUserType: user.type,
-      metadata: { reason: body.reason ?? null, direction: call.direction },
-    }).catch(() => undefined);
+    void this.callsService
+      .recordTrace(call.id, {
+        source: 'api',
+        stage: 'call.ended',
+        message: 'Llamada finalizada por participante',
+        actorUserId: user.sub,
+        actorUserType: user.type,
+        metadata: { reason: body.reason ?? null, direction: call.direction },
+      })
+      .catch(() => undefined);
     this.emitCallTerminalState('calls:ended', call);
-    await this.callsPushService.sendResidentCallState(call, 'ended');
+    await this.callsPushService.sendCallState(call, 'ended');
     await this.emitPorterAvailability();
   }
 
@@ -344,21 +439,25 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const targetUser = this.callsService.getSignalTarget(call, user);
     if (!targetUser) {
-      throw new WsException('No hay un participante disponible para recibir la señal');
+      throw new WsException(
+        'No hay un participante disponible para recibir la señal',
+      );
     }
 
     if (body.signal.type !== 'ice-candidate') {
-      void this.callsService.recordTrace(call.id, {
-        source: 'api',
-        stage: `signal.${body.signal.type}.forwarded`,
-        message: `Señal ${body.signal.type} reenviada`,
-        actorUserId: user.sub,
-        actorUserType: user.type,
-        metadata: {
-          fromUserType: user.type,
-          toUserType: targetUser.type,
-        },
-      }).catch(() => undefined);
+      void this.callsService
+        .recordTrace(call.id, {
+          source: 'api',
+          stage: `signal.${body.signal.type}.forwarded`,
+          message: `Señal ${body.signal.type} reenviada`,
+          actorUserId: user.sub,
+          actorUserType: user.type,
+          metadata: {
+            fromUserType: user.type,
+            toUserType: targetUser.type,
+          },
+        })
+        .catch(() => undefined);
     }
 
     client.to(this.callRoom(call.id)).emit('calls:signal', {
@@ -388,20 +487,24 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const targetUser = this.callsService.getSignalTarget(call, user);
     if (!targetUser) {
-      throw new WsException('No hay un participante disponible para reenviar la oferta');
+      throw new WsException(
+        'No hay un participante disponible para reenviar la oferta',
+      );
     }
 
-    void this.callsService.recordTrace(call.id, {
-      source: 'api',
-      stage: 'signal.offer.retry_requested',
-      message: 'Se solicitó reintento de oferta WebRTC',
-      actorUserId: user.sub,
-      actorUserType: user.type,
-      metadata: {
-        fromUserType: user.type,
-        toUserType: targetUser.type,
-      },
-    }).catch(() => undefined);
+    void this.callsService
+      .recordTrace(call.id, {
+        source: 'api',
+        stage: 'signal.offer.retry_requested',
+        message: 'Se solicitó reintento de oferta WebRTC',
+        actorUserId: user.sub,
+        actorUserType: user.type,
+        metadata: {
+          fromUserType: user.type,
+          toUserType: targetUser.type,
+        },
+      })
+      .catch(() => undefined);
 
     client.to(this.callRoom(call.id)).emit('calls:request-offer', {
       callId: call.id,
@@ -418,7 +521,9 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       typeof client.handshake.headers.authorization === 'string'
         ? client.handshake.headers.authorization
         : '';
-    const bearerToken = headerAuth.startsWith('Bearer ') ? headerAuth.slice(7) : null;
+    const bearerToken = headerAuth.startsWith('Bearer ')
+      ? headerAuth.slice(7)
+      : null;
     const token = authToken || bearerToken;
     if (!token) {
       throw new WsException('Missing token');
@@ -452,7 +557,9 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.disconnectCleanupByUserKey.set(key, timeout);
   }
 
-  private clearDisconnectCleanupForUser(user: Pick<JwtPayload, 'sub' | 'type'>) {
+  private clearDisconnectCleanupForUser(
+    user: Pick<JwtPayload, 'sub' | 'type'>,
+  ) {
     const key = this.userKey(user);
     const timeout = this.disconnectCleanupByUserKey.get(key);
     if (!timeout) {
@@ -465,10 +572,13 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private async cleanupDisconnectedUserCalls(user: JwtPayload) {
     this.disconnectCleanupByUserKey.delete(this.userKey(user));
 
-    const endedCalls = await this.callsService.endOpenCallsForActor({
-      id: user.sub,
-      type: user.type,
-    }, 'socket_disconnect');
+    const endedCalls = await this.callsService.endOpenCallsForActor(
+      {
+        id: user.sub,
+        type: user.type,
+      },
+      'socket_disconnect',
+    );
 
     if (endedCalls.length === 0) {
       return;
@@ -477,18 +587,20 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     for (const call of endedCalls) {
       this.clearTimeoutForCall(call.id);
       this.emitCallTerminalState('calls:ended', call);
-      await this.callsPushService.sendResidentCallState(call, 'ended');
-      void this.callsService.recordTrace(call.id, {
-        source: 'api',
-        stage: 'call.ended.disconnect_cleanup',
-        message: 'Llamada cerrada por desconexión del participante',
-        actorUserId: user.sub,
-        actorUserType: user.type,
-        metadata: {
-          reason: 'socket_disconnect',
-          direction: call.direction,
-        },
-      }).catch(() => undefined);
+      await this.callsPushService.sendCallState(call, 'ended');
+      void this.callsService
+        .recordTrace(call.id, {
+          source: 'api',
+          stage: 'call.ended.disconnect_cleanup',
+          message: 'Llamada cerrada por desconexión del participante',
+          actorUserId: user.sub,
+          actorUserType: user.type,
+          metadata: {
+            reason: 'socket_disconnect',
+            direction: call.direction,
+          },
+        })
+        .catch(() => undefined);
     }
 
     await this.emitPorterAvailability();
@@ -521,7 +633,12 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (call.direction === 'outbound') {
       if (call.initiatedByEmployeeId) {
         this.server
-          .to(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
+          .to(
+            this.userRoom({
+              sub: call.initiatedByEmployeeId,
+              type: 'employee',
+            }),
+          )
           .emit(eventName, call);
       }
       (call.targetResidentIds ?? []).forEach((residentId) => {
@@ -532,7 +649,12 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } else if (call.direction === 'inbound') {
       if (call.initiatedByResidentId) {
         this.server
-          .to(this.userRoom({ sub: call.initiatedByResidentId, type: 'resident' }))
+          .to(
+            this.userRoom({
+              sub: call.initiatedByResidentId,
+              type: 'resident',
+            }),
+          )
           .emit(eventName, call);
       }
       (call.targetEmployeeIds ?? []).forEach((employeeId) => {
@@ -543,7 +665,12 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } else {
       if (call.initiatedByEmployeeId) {
         this.server
-          .to(this.userRoom({ sub: call.initiatedByEmployeeId, type: 'employee' }))
+          .to(
+            this.userRoom({
+              sub: call.initiatedByEmployeeId,
+              type: 'employee',
+            }),
+          )
           .emit(eventName, call);
       }
       (call.targetEmployeeIds ?? []).forEach((employeeId) => {
@@ -575,14 +702,16 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         if (!call) {
           return;
         }
-        void this.callsService.recordTrace(call.id, {
-          source: 'api',
-          stage: 'call.missed.timeout',
-          message: 'Llamada cerrada por timeout',
-          metadata: { direction: call.direction },
-        }).catch(() => undefined);
+        void this.callsService
+          .recordTrace(call.id, {
+            source: 'api',
+            stage: 'call.missed.timeout',
+            message: 'Llamada cerrada por timeout',
+            metadata: { direction: call.direction },
+          })
+          .catch(() => undefined);
         this.emitCallTerminalState('calls:missed', call);
-        await this.callsPushService.sendResidentCallState(call, 'missed');
+        await this.callsPushService.sendCallState(call, 'missed');
         await this.emitPorterAvailability();
       } finally {
         this.timeoutByCallId.delete(callId);
@@ -597,6 +726,30 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (timeout) {
       clearTimeout(timeout);
       this.timeoutByCallId.delete(callId);
+    }
+  }
+
+  private async reconcileExpiredCalls() {
+    try {
+      const calls = await this.callsService.expireRingingCalls();
+      for (const call of calls) {
+        this.clearTimeoutForCall(call.id);
+        this.emitCallTerminalState('calls:missed', call);
+        await this.callsPushService.sendCallState(call, 'missed');
+        void this.callsService
+          .recordTrace(call.id, {
+            source: 'api',
+            stage: 'call.missed.reaper',
+            message: 'Llamada vencida reconciliada desde PostgreSQL',
+            metadata: { direction: call.direction },
+          })
+          .catch(() => undefined);
+      }
+      if (calls.length > 0) await this.emitPorterAvailability();
+    } catch (error) {
+      this.logger.error(
+        `No fue posible reconciliar llamadas vencidas: ${this.getErrorMessage(error)}`,
+      );
     }
   }
 
