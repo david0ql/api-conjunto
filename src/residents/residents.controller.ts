@@ -1,13 +1,18 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { AdminOrPorterGuard } from '../common/guards/admin-or-porter.guard';
 import { OperationsEmployeeGuard } from '../common/guards/operations-employee.guard';
+import { ResidentGuard } from '../common/guards/resident.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { ResidentsService } from './residents.service';
 import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
+import { CreateFamilyMemberDto } from './dto/create-family-member.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('residents')
@@ -51,9 +56,52 @@ export class ResidentsController {
   }
 
   @Get('me/qr')
-  getMyQr(@CurrentUser() user: JwtPayload, @Query('apartmentId') apartmentId?: string) {
+  getMyQr(
+    @CurrentUser() user: JwtPayload,
+    @Query('apartmentId') apartmentId?: string,
+    @Query('residentId') residentId?: string,
+  ) {
     if (!apartmentId) throw new BadRequestException('apartmentId is required');
-    return this.service.getQrCode(user.sub, apartmentId);
+    return this.service.getQrCode(residentId ?? user.sub, apartmentId, user.sub);
+  }
+
+  @Get('me/family')
+  @UseGuards(ResidentGuard)
+  getMyFamily(@CurrentUser() user: JwtPayload) {
+    return this.service.getFamilyMembers(user.sub);
+  }
+
+  @Get('me/vehicles')
+  @UseGuards(ResidentGuard)
+  getMyVehicles(@CurrentUser() user: JwtPayload) {
+    return this.service.getMyVehicles(user.sub);
+  }
+
+  @Post('me/family')
+  @UseGuards(ResidentGuard)
+  @UseInterceptors(
+    FileInterceptor('photo', {
+      storage: diskStorage({
+        destination: (req, file, cb) => {
+          const folder = 'uploads/residents/family';
+          const fs = require('fs');
+          if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+          cb(null, folder);
+        },
+        filename: (req, file, cb) => {
+          const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extname(file.originalname)}`;
+          cb(null, unique);
+        },
+      }),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  createFamilyMember(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CreateFamilyMemberDto,
+    @UploadedFile() photo?: Express.Multer.File,
+  ) {
+    return this.service.createFamilyMember(user.sub, dto, photo?.path);
   }
 
   @Get(':id')

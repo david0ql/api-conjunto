@@ -1,12 +1,16 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import * as QRCode from 'qrcode';
 import { Resident } from './entities/resident.entity';
 import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
+import { CreateFamilyMemberDto } from './dto/create-family-member.dto';
 import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
+import { ResidentType } from '../resident-types/entities/resident-type.entity';
+import { ResidentVehicle } from '../resident-vehicles/entities/resident-vehicle.entity';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { periodToStartDate } from '../common/utils/period-filter';
@@ -26,6 +30,10 @@ export class ResidentsService {
     private repository: Repository<Resident>,
     @InjectRepository(ResidentApartment)
     private residentApartmentsRepository: Repository<ResidentApartment>,
+    @InjectRepository(ResidentType)
+    private residentTypesRepository: Repository<ResidentType>,
+    @InjectRepository(ResidentVehicle)
+    private residentVehiclesRepository: Repository<ResidentVehicle>,
   ) {}
 
   async findAll(apartmentId?: string, query: ResidentFilters = {}): Promise<PaginatedResponse<Resident>> {
@@ -177,7 +185,15 @@ export class ResidentsService {
     return count > 0;
   }
 
-  async getQrCode(residentId: string, apartmentId: string): Promise<{ dataUrl: string; residentId: string; apartmentId: string }> {
+  async getQrCode(
+    residentId: string,
+    apartmentId: string,
+    callerId: string,
+  ): Promise<{ dataUrl: string; residentId: string; apartmentId: string }> {
+    if (residentId !== callerId) {
+      const shared = await this.shareApartment(callerId, residentId);
+      if (!shared) throw new ForbiddenException('You can only view the QR of members of your own apartment');
+    }
     const resident = await this.findOne(residentId);
     const payload = JSON.stringify({ residentId: resident.id, apartmentId, type: 'resident-access' });
     const dataUrl = await QRCode.toDataURL(payload, {
@@ -186,6 +202,115 @@ export class ResidentsService {
       color: { dark: '#000000', light: '#ffffff' },
     });
     return { dataUrl, residentId: resident.id, apartmentId };
+  }
+
+  /**
+   * Every apartment a resident is linked to, via either the legacy
+   * residents.apartment_id column or the resident_apartments junction.
+   */
+  private async getApartmentIds(residentId: string): Promise<string[]> {
+    const resident = await this.repository.findOne({ where: { id: residentId } });
+    const links = await this.residentApartmentsRepository.find({ where: { residentId } });
+    const ids = new Set(links.map((l) => l.apartmentId));
+    if (resident?.apartmentId) ids.add(resident.apartmentId);
+    return [...ids];
+  }
+
+  private async shareApartment(residentAId: string, residentBId: string): Promise<boolean> {
+    const [aIds, bIds] = await Promise.all([
+      this.getApartmentIds(residentAId),
+      this.getApartmentIds(residentBId),
+    ]);
+    return aIds.some((id) => bIds.includes(id));
+  }
+
+  /**
+   * Lets a logged-in resident (the household head) register a family member
+   * directly from their own session, without admin/porter privileges. The
+   * new member is created inactive — an admin must activate them from the
+   * web before their QR/signature becomes usable (see getQrCode/getFamilyMembers).
+   */
+  async createFamilyMember(
+    headResidentId: string,
+    dto: CreateFamilyMemberDto,
+    photoPath?: string,
+  ): Promise<{ resident: Resident; generatedPassword: string }> {
+    const apartmentIds = await this.getApartmentIds(headResidentId);
+    const apartmentId = apartmentIds[0];
+    if (!apartmentId) {
+      throw new BadRequestException('You must have an apartment assigned before adding family members');
+    }
+
+    const existing = await this.repository.findOne({
+      where: [{ document: dto.document }, ...(dto.email ? [{ email: dto.email }] : [])],
+    });
+    if (existing) throw new ConflictException('Email or document already in use');
+
+    const familyType = await this.residentTypesRepository.findOne({ where: { code: 'family' } });
+    if (!familyType) throw new BadRequestException('Family resident type is not configured');
+
+    const generatedPassword = crypto.randomBytes(4).toString('hex');
+    const passwordHash = await bcrypt.hash(generatedPassword, 10);
+
+    const item = this.repository.create({
+      name: dto.name,
+      lastName: dto.lastName,
+      document: dto.document,
+      phone: dto.phone,
+      email: dto.email,
+      birthDate: dto.birthDate,
+      photoPath,
+      passwordHash,
+      residentTypeId: familyType.id,
+      apartmentId,
+      isActive: false,
+    });
+    const saved = await this.repository.save(item);
+
+    await this.residentApartmentsRepository.save(
+      this.residentApartmentsRepository.create({ residentId: saved.id, apartmentId }),
+    );
+
+    const resident = await this.findOne(saved.id);
+    return { resident, generatedPassword };
+  }
+
+  /**
+   * Members of the caller's household (any apartment they're linked to),
+   * excluding the caller themselves.
+   */
+  async getFamilyMembers(residentId: string): Promise<Resident[]> {
+    const apartmentIds = await this.getApartmentIds(residentId);
+    if (apartmentIds.length === 0) return [];
+
+    const qb = this.repository
+      .createQueryBuilder('r')
+      .leftJoinAndSelect('r.residentType', 'residentType')
+      .where('r.id != :residentId', { residentId })
+      .andWhere(
+        '(r.apartment_id IN (:...apartmentIds) OR EXISTS (SELECT 1 FROM resident_apartments ra WHERE ra.resident_id = r.id AND ra.apartment_id IN (:...apartmentIds)))',
+        { apartmentIds },
+      )
+      .orderBy('r.createdAt', 'DESC');
+
+    const members = await qb.getMany();
+    await this.attachPhotos(members);
+    return members;
+  }
+
+  /**
+   * Vehicles registered to any apartment the resident is linked to. A vehicle
+   * belongs to the apartment, not to an individual resident, so owner/tenant/
+   * family members of the same household all see the same list.
+   */
+  async getMyVehicles(residentId: string): Promise<ResidentVehicle[]> {
+    const apartmentIds = await this.getApartmentIds(residentId);
+    if (apartmentIds.length === 0) return [];
+    return this.residentVehiclesRepository.find({
+      where: { apartmentId: In(apartmentIds) },
+      relations: ['vehicleBrand'],
+      order: { createdAt: 'DESC' },
+    });
   }
 
   async create(dto: CreateResidentDto): Promise<Resident> {
