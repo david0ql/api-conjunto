@@ -65,10 +65,18 @@ export class ResidentsService {
       qb.andWhere('r.resident_type_id = :typeId', { typeId: query.typeId });
     }
     // Inactive (soft-deleted) residents are hidden by default so they don't
-    // clutter the directory. They remain retrievable for auditing by explicitly
-    // requesting isActive=false. Pass isActive=all to list everyone.
+    // clutter the directory. Exception: family members created from the mobile
+    // app awaiting admin activation (is_active=false, type=family) must appear
+    // by default so the admin can approve them. isActive=pending isolates only
+    // those pending family members; isActive=false / all behave as before.
     if (query.isActive === undefined || query.isActive === '') {
-      qb.andWhere('r.is_active = true');
+      qb.andWhere(
+        "(r.is_active = true OR (r.is_active = false AND residentType.code = 'family'))",
+      );
+    } else if (query.isActive === 'pending') {
+      qb.andWhere(
+        "(r.is_active = false AND residentType.code = 'family')",
+      );
     } else if (query.isActive !== 'all') {
       qb.andWhere('r.is_active = :isActive', { isActive: query.isActive === 'true' });
     }
