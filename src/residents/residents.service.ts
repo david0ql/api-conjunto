@@ -23,6 +23,33 @@ interface ResidentFilters extends PaginationQueryDto {
   towerId?: string;
 }
 
+// Transliteración acento→base para la búsqueda: el usuario escribe "Andres" y
+// debe encontrar "Andrés", "Nuñez" debe encontrar "Núñez", etc. 'translate()'
+// exige que ambos strings tengan la MISMA longitud (80 = 80).
+const UNACCENT_FROM =
+  'áàâäãåāăąéèêëēėęíìîïīįóòôöõōőúùûüūűũñçýÿ' +
+  'ÁÀÂÄÃÅĀĂĄÉÈÊËĒĖĘÍÌÎÏĪĮÓÒÔÖÕŌŐÚÙÛÜŪŰŨÑÇÝŸ';
+const UNACCENT_TO =
+  'aaaaaaaaaeeeeeeeiiiiiiooooooouuuuuuuncyy' +
+  'AAAAAAAAAEEEEEEEIIIIIIOOOOOOOUUUUUUUNCYY';
+
+/** Same mapping as UNACCENT_FROM/UNACCENT_TO, but evaluated in PostgreSQL. */
+function sqlUnaccent(column: string): string {
+  return `translate(lower(${column}), '${UNACCENT_FROM}', '${UNACCENT_TO}')`;
+}
+
+/**
+ * Normaliza un término como lo hace sqlUnaccent() en SQL: minúsculas sin
+ * tildes, listo para comparar contra translate(lower(columna), ...).
+ */
+function normalizeSearchTerm(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 @Injectable()
 export class ResidentsService {
   constructor(
@@ -55,11 +82,39 @@ export class ResidentsService {
       );
     }
     if (query.search) {
-      const q = `%${query.search}%`;
-      qb.andWhere(
-        '(r.name ILIKE :q OR r.last_name ILIKE :q OR r.document ILIKE :q OR r.email ILIKE :q OR r.phone ILIKE :q OR apartment.number ILIKE :q OR EXISTS (SELECT 1 FROM resident_apartments ra JOIN apartments raa ON raa.id = ra.apartment_id WHERE ra.resident_id = r.id AND raa.number ILIKE :q))',
-        { q },
-      );
+      const terms = normalizeSearchTerm(query.search)
+        .split(/\s+/)
+        .filter(Boolean);
+      if (terms.length > 0) {
+        // Cada palabra del texto busca en TODAS las columnas (nombre, apellido,
+        // documento, correo, teléfono y número de apartamento) y TODAS deben
+        // coincidir. Así "Oliver Andres", "Solano Diaz" o "Andres Solano"
+        // funcionan sin importar cómo se repartió el nombre en la base.
+        const conditions = terms
+          .map((term, i) => {
+            const p = `q${i}`;
+            return `(
+              ${sqlUnaccent('r.name')} ILIKE :${p}
+              OR ${sqlUnaccent('r.last_name')} ILIKE :${p}
+              OR ${sqlUnaccent('r.document')} ILIKE :${p}
+              OR ${sqlUnaccent('r.email')} ILIKE :${p}
+              OR ${sqlUnaccent('r.phone')} ILIKE :${p}
+              OR CONCAT(${sqlUnaccent('r.name')}, ' ', ${sqlUnaccent('r.last_name')}) ILIKE :${p}
+              OR ${sqlUnaccent('apartment.number')} ILIKE :${p}
+              OR EXISTS (
+                SELECT 1 FROM resident_apartments ra
+                JOIN apartments raa ON raa.id = ra.apartment_id
+                WHERE ra.resident_id = r.id
+                  AND ${sqlUnaccent('raa.number')} ILIKE :${p}
+              )
+            )`;
+          })
+          .join(' AND ');
+        const params = Object.fromEntries(
+          terms.map((term, i) => [`q${i}`, `%${term}%`]),
+        );
+        qb.andWhere(`(${conditions})`, params);
+      }
     }
     if (query.typeId) {
       qb.andWhere('r.resident_type_id = :typeId', { typeId: query.typeId });
