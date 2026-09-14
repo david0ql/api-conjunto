@@ -311,6 +311,20 @@ export class CallsGateway
       type: user.type,
     });
 
+    if (result.ignored) {
+      void this.callsService
+        .recordTrace(result.call.id, {
+          source: 'api',
+          stage: 'call.rejected.late_ignored',
+          message: 'Rechazo tardío ignorado porque la llamada ya está activa',
+          actorUserId: user.sub,
+          actorUserType: user.type,
+          metadata: { direction: result.call.direction },
+        })
+        .catch(() => undefined);
+      return;
+    }
+
     if (!result.terminal) {
       void this.callsService
         .recordTrace(result.call.id, {

@@ -514,7 +514,11 @@ export class CallsService {
         );
       }
       if (call.status !== 'ringing') {
-        return { terminal: true, call: await this.getPayload(call.id) };
+        return {
+          terminal: call.status !== 'active',
+          ignored: call.status === 'active',
+          call: await this.getPayload(call.id),
+        };
       }
 
       const rejected = new Set(call.rejectedResidentIds ?? []);
@@ -541,7 +545,11 @@ export class CallsService {
         );
       }
       if (call.status !== 'ringing') {
-        return { terminal: true, call: await this.getPayload(call.id) };
+        return {
+          terminal: call.status !== 'active',
+          ignored: call.status === 'active',
+          call: await this.getPayload(call.id),
+        };
       }
 
       const rejected = new Set(call.rejectedEmployeeIds ?? []);
