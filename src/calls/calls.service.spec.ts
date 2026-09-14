@@ -140,6 +140,30 @@ describe('CallsService.getCallHistory', () => {
     expect(callSessionRepo.save).not.toHaveBeenCalled();
   });
 
+  it('ignores a delayed reject when the call is already active', async () => {
+    const activeCall = {
+      id: 'active-call',
+      direction: 'inbound',
+      status: 'active',
+      targetEmployeeIds: ['employee-1'],
+      acceptedByEmployeeId: 'employee-1',
+    } as unknown as CallSession;
+    callSessionRepo.findOne.mockResolvedValue(activeCall);
+    jest.spyOn(service, 'getPayload').mockResolvedValue(activeCall as never);
+
+    const result = await service.rejectCall('active-call', {
+      id: 'employee-1',
+      type: 'employee',
+    });
+
+    expect(result).toEqual({
+      terminal: false,
+      ignored: true,
+      call: activeCall,
+    });
+    expect(callSessionRepo.save).not.toHaveBeenCalled();
+  });
+
   it('expires only ringing calls returned by the durable expiry query', async () => {
     callSessionRepo.find.mockResolvedValue([
       { id: 'expired-1' },
