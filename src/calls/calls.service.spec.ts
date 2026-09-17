@@ -28,7 +28,7 @@ const makeRepo = (items: unknown[], total?: number) => {
       .fn()
       .mockResolvedValue([items, total ?? items.length]),
   };
-  return {
+  const repo: Record<string, unknown> = {
     __qb: qb,
     findAndCount: jest.fn().mockResolvedValue([items, total ?? items.length]),
     findOne: jest.fn(),
@@ -38,6 +38,19 @@ const makeRepo = (items: unknown[], total?: number) => {
     create: jest.fn(),
     save: jest.fn(),
     createQueryBuilder: jest.fn().mockReturnValue(qb),
+  };
+  const manager = {
+    query: jest.fn().mockResolvedValue([]),
+    getRepository: jest.fn(() => repo),
+  };
+  repo.manager = {
+    transaction: jest.fn((work: (m: typeof manager) => unknown) => work(manager)),
+  };
+  return repo as typeof repo & {
+    __qb: typeof qb;
+    findOne: jest.Mock;
+    find: jest.Mock;
+    save: jest.Mock;
   };
 };
 

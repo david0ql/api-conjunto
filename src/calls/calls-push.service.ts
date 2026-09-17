@@ -51,6 +51,9 @@ interface ResidentNotificationPushInput {
   notificationTypeCode?: string | null;
 }
 
+/** The call stopped ringing (answered, rejected, ended or expired). */
+export class CallInvitationClosedError extends Error {}
+
 @Injectable()
 export class CallsPushService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CallsPushService.name);
@@ -59,6 +62,21 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
   private workerInterval: NodeJS.Timeout | null = null;
   private recoveryInterval: NodeJS.Timeout | null = null;
   private workerRunning = false;
+
+  private static readonly DEFAULT_INCOMING_TTL_MS = 45_000;
+  private static readonly SOCKET_ACK_WINDOW_MS = 2_500;
+  private static readonly MIN_INCOMING_TTL_MS = 1_000;
+  private static readonly PERMANENT_FCM_ERROR_CODES = new Set([
+    'messaging/registration-token-not-registered',
+    'messaging/invalid-registration-token',
+    'messaging/invalid-recipient',
+    'messaging/mismatched-credential',
+  ]);
+  private static readonly PERMANENT_APNS_REASONS = new Set([
+    'BadDeviceToken',
+    'Unregistered',
+    'DeviceTokenNotForTopic',
+  ]);
 
   constructor(
     @InjectRepository(CallDevice)
@@ -112,6 +130,28 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
     device.lastSeenAt = new Date();
     device.lastError = null;
     await this.callDevicesRepository.save(device);
+    await this.deactivateReplacedTokens(device);
+  }
+
+  /**
+   * A physical device keeps one live token per channel. When it registers a
+   * new one (token refresh, reinstall), older tokens for that device stop
+   * receiving pushes so the same phone can never ring twice for one call.
+   */
+  private async deactivateReplacedTokens(device: CallDevice) {
+    if (!device.deviceId) {
+      return;
+    }
+
+    await this.callDevicesRepository
+      .createQueryBuilder()
+      .update(CallDevice)
+      .set({ isActive: false, lastSeenAt: new Date() })
+      .where('device_id = :deviceId', { deviceId: device.deviceId })
+      .andWhere('channel = :channel', { channel: device.channel })
+      .andWhere('token <> :token', { token: device.token })
+      .andWhere('is_active = true')
+      .execute();
   }
 
   private async deactivateDeviceRegistrationsForOtherUsers(
@@ -177,10 +217,22 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
     return this.sendIncomingCall(call);
   }
 
-  async sendIncomingCall(call: CallSessionPayload) {
+  /**
+   * `socketUserIds`: targets that already got the invitation through an open
+   * socket. Their push waits SOCKET_ACK_WINDOW_MS and is skipped if their
+   * phone confirmed it is showing the call; otherwise a late push could ring
+   * again after the call ended (the app does not remember finished calls).
+   */
+  async sendIncomingCall(
+    call: CallSessionPayload,
+    options: { socketUserIds?: string[] } = {},
+  ) {
     const target = this.getCallTarget(call);
     if (target.userIds.length === 0) return;
-    await this.enqueue(call, 'incoming');
+    const socketUserIds = (options.socketUserIds ?? []).filter((id) =>
+      target.userIds.includes(id),
+    );
+    await this.enqueue(call, 'incoming', socketUserIds);
   }
 
   async sendResidentCallState(
@@ -199,7 +251,11 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
     await this.enqueue(call, event);
   }
 
-  private async enqueue(call: CallSessionPayload, event: CallPushEvent) {
+  private async enqueue(
+    call: CallSessionPayload,
+    event: CallPushEvent,
+    deferredUserIds: string[] = [],
+  ) {
     const target = this.getCallTarget(call);
     const channels: CallPushChannel[] = ['fcm', 'hms'];
     if (event === 'incoming' && target.userType === 'resident') channels.push('voip');
@@ -212,6 +268,7 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
         event,
         channel,
         payload: call as never,
+        deferredUserIds: deferredUserIds.length > 0 ? deferredUserIds : null,
         status: 'pending',
         attempts: 0,
         nextAttemptAt: new Date(),
@@ -254,6 +311,9 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
            jobs.event AS "event",
            jobs.channel AS "channel",
            jobs.payload AS "payload",
+           jobs.delivered_tokens AS "deliveredTokens",
+           jobs.deferred_user_ids AS "deferredUserIds",
+           jobs.created_at AS "createdAt",
            jobs.attempts AS "attempts"`,
         [limit],
       );
@@ -273,6 +333,15 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
             typeof row.payload === 'string'
               ? (JSON.parse(row.payload) as CallSessionPayload)
               : (row.payload as CallSessionPayload),
+          deliveredTokens:
+            typeof row.deliveredTokens === 'string'
+              ? (JSON.parse(row.deliveredTokens) as string[])
+              : null,
+          deferredUserIds:
+            typeof row.deferredUserIds === 'string'
+              ? (JSON.parse(row.deferredUserIds) as string[])
+              : null,
+          createdAt: new Date(row.createdAt as string | Date),
           status: 'processing',
           attempts: Number(row.attempts),
         }),
@@ -281,37 +350,112 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async processJob(job: CallPushJob) {
-    if (
-      job.event === 'incoming' &&
-      job.payload.expiresAt &&
-      new Date(job.payload.expiresAt).getTime() <= Date.now()
-    ) {
-      await this.callPushJobsRepository.update(job.id, {
-        status: 'failed',
-        lockedAt: null,
-        lastError: 'La invitación de llamada venció antes de poder enviarse',
-      });
-      return;
-    }
-
+    const delivered = new Set(job.deliveredTokens ?? []);
     try {
-      const target = this.getCallTarget(job.payload);
-      if (job.channel === 'fcm') await this.sendFcm(job.payload, job.event, target);
-      else if (job.channel === 'hms') await this.sendHms(job.payload, job.event, target);
-      else await this.sendResidentVoip(job.payload);
+      // Cheap early exit; the same gate runs again right before each network
+      // send so the window between "still ringing" and "sent" stays minimal.
+      await this.getIncomingTtlMs(job.payload, job.event);
+
+      const { skipUserIds, resumeAt } = await this.resolveSocketAcks(job);
+      const baseTarget = this.getCallTarget(job.payload);
+      const target = {
+        ...baseTarget,
+        userIds: baseTarget.userIds.filter((id) => !skipUserIds.has(id)),
+      };
+      if (target.userIds.length > 0) {
+        if (job.channel === 'fcm') await this.sendFcm(job.payload, job.event, target, delivered);
+        else if (job.channel === 'hms') await this.sendHms(job.payload, job.event, target, delivered);
+        else await this.sendResidentVoip(job.payload, delivered, target.userIds);
+      }
+
+      if (resumeAt) {
+        // Users without a socket were served now; the rest after the window.
+        // Waiting is not a failed attempt, so the retry budget is kept.
+        await this.callPushJobsRepository.update(job.id, {
+          status: 'pending', nextAttemptAt: resumeAt, lockedAt: null,
+          attempts: Math.max(0, job.attempts - 1), lastError: null,
+          deliveredTokens: Array.from(delivered),
+        });
+        return;
+      }
       await this.callPushJobsRepository.update(job.id, {
         status: 'sent', sentAt: new Date(), lockedAt: null, lastError: null,
+        deliveredTokens: Array.from(delivered),
       });
     } catch (error) {
-      const terminal = job.attempts >= 6;
+      // An invitation for a call that stopped ringing is never retried: that
+      // retry is exactly what made phones ring again after answering.
+      const terminal = error instanceof CallInvitationClosedError || job.attempts >= 6;
       const delayMs = Math.min(60_000, 1_000 * 2 ** Math.max(0, job.attempts - 1));
       await this.callPushJobsRepository.update(job.id, {
         status: terminal ? 'failed' : 'pending',
         nextAttemptAt: new Date(Date.now() + delayMs),
         lockedAt: null,
         lastError: this.getErrorMessage(error).slice(0, 2_000),
+        deliveredTokens: Array.from(delivered),
       });
     }
+  }
+
+  private async resolveSocketAcks(job: CallPushJob): Promise<{
+    skipUserIds: Set<string>;
+    resumeAt: Date | null;
+  }> {
+    const deferred = job.event === 'incoming' ? (job.deferredUserIds ?? []) : [];
+    if (deferred.length === 0) {
+      return { skipUserIds: new Set(), resumeAt: null };
+    }
+    const ackDeadline =
+      job.createdAt.getTime() + CallsPushService.SOCKET_ACK_WINDOW_MS;
+    if (Date.now() < ackDeadline) {
+      return { skipUserIds: new Set(deferred), resumeAt: new Date(ackDeadline) };
+    }
+    const showing = await this.callsService.getUsersShowingIncomingCall(
+      job.callSessionId,
+      deferred,
+    );
+    return { skipUserIds: showing, resumeAt: null };
+  }
+
+  /**
+   * For an `incoming` push, returns how long the invitation may still live
+   * (used as the push TTL so a late delivery can never ring an expired call).
+   * Throws CallInvitationClosedError once the call is no longer ringing.
+   * State events (accepted/ended/...) are always deliverable and return null.
+   */
+  private async getIncomingTtlMs(
+    call: CallSessionPayload,
+    event: CallPushEvent,
+  ): Promise<number | null> {
+    if (event !== 'incoming') return null;
+
+    const remainingMs = call.expiresAt
+      ? new Date(call.expiresAt).getTime() - Date.now()
+      : CallsPushService.DEFAULT_INCOMING_TTL_MS;
+    if (remainingMs < CallsPushService.MIN_INCOMING_TTL_MS) {
+      throw new CallInvitationClosedError(
+        'La invitación de llamada venció antes de poder enviarse',
+      );
+    }
+
+    const status = await this.callsService.getCallStatus(call.id);
+    if (status !== 'ringing') {
+      throw new CallInvitationClosedError(
+        `La llamada ya no está timbrando (${status ?? 'no existe'})`,
+      );
+    }
+    return Math.min(remainingMs, CallsPushService.DEFAULT_INCOMING_TTL_MS);
+  }
+
+  /** Active devices that have not received this push yet, one per token. */
+  private pendingDevices(devices: CallDevice[], delivered: Set<string>) {
+    const byToken = new Map<string, CallDevice>();
+    for (const device of devices) {
+      if (!delivered.has(device.token) && !byToken.has(device.token)) {
+        byToken.set(device.token, device);
+      }
+    }
+    return Array.from(byToken.values());
   }
 
   private async recoverAbandonedJobs() {
@@ -325,7 +469,26 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
   }
 
   async sendResidentNotification(input: ResidentNotificationPushInput) {
-    if (!input.targetResidentIds.length) {
+    return this.sendUserNotification({
+      userType: 'resident',
+      userIds: input.targetResidentIds,
+      notificationId: input.notificationId,
+      title: input.title,
+      body: input.body,
+      notificationTypeCode: input.notificationTypeCode,
+    });
+  }
+
+  /** Plain notification (shown by the system; the app shows it in foreground on iOS). */
+  async sendUserNotification(input: {
+    userType: JwtPayload['type'];
+    userIds: string[];
+    notificationId: string;
+    title: string;
+    body: string;
+    notificationTypeCode?: string | null;
+  }) {
+    if (!input.userIds.length) {
       return;
     }
 
@@ -336,8 +499,8 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
 
     const devices = await this.callDevicesRepository.find({
       where: {
-        userType: 'resident',
-        userId: In(input.targetResidentIds),
+        userType: input.userType,
+        userId: In(input.userIds),
         platform: In(['android', 'ios']),
         channel: 'fcm',
         isActive: true,
@@ -387,7 +550,7 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
       const result = await messaging.sendEachForMulticast(message);
       await this.handleFcmFailures(
         devices,
-        result.responses.map((response) => response.error?.message ?? null),
+        result.responses.map((response) => response.error ?? null),
       );
     } catch (error) {
       this.logger.warn(
@@ -400,8 +563,9 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
     call: CallSessionPayload,
     event: ResidentCallPushEvent,
     target: { userType: JwtPayload['type']; userIds: string[] },
+    delivered: Set<string> = new Set(),
   ) {
-    const devices = await this.callDevicesRepository.find({
+    const allDevices = await this.callDevicesRepository.find({
       where: {
         userType: target.userType,
         userId: In(target.userIds),
@@ -410,7 +574,7 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
         isActive: true,
       },
     });
-    if (devices.length === 0) {
+    if (allDevices.length === 0) {
       await this.callsService.recordTrace(call.id, {
         source: 'api',
         stage: 'push.fcm.no_devices',
@@ -420,6 +584,9 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
       });
       return;
     }
+    const devices = this.pendingDevices(allDevices, delivered);
+    if (devices.length === 0) return;
+
     const messaging = this.getMessagingClient();
     if (!messaging) {
       await this.callsService.recordTrace(call.id, {
@@ -432,16 +599,17 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
       throw new Error('Firebase Admin no está configurado');
     }
 
-    const collapseKey =
-      event === 'incoming' ? undefined : `call-state-${call.id}`;
+    const incomingTtlMs = await this.getIncomingTtlMs(call, event);
 
+    // Invitation and state events share one collapse key: a device that was
+    // offline only gets the latest one (e.g. "ended"), never a stale invite.
     const message: MulticastMessage = {
       tokens: devices.map((device) => device.token),
       data: this.buildFcmData(call, event),
       android: {
         priority: 'high',
-        ttl: event === 'incoming' ? 1000 * 45 : 1000 * 60,
-        collapseKey,
+        ttl: incomingTtlMs ?? 1000 * 60,
+        collapseKey: `call-${call.id}`,
         directBootOk: true,
       },
       apns: {
@@ -463,9 +631,12 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
 
     try {
       const result = await messaging.sendEachForMulticast(message);
-      await this.handleFcmFailures(
+      result.responses.forEach((response, index) => {
+        if (response.success) delivered.add(devices[index].token);
+      });
+      const { retryable } = await this.handleFcmFailures(
         devices,
-        result.responses.map((response) => response.error?.message ?? null),
+        result.responses.map((response) => response.error ?? null),
       );
       await this.callsService.recordTrace(call.id, {
         source: 'api',
@@ -476,15 +647,19 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
           event,
           successCount: result.successCount,
           failureCount: result.failureCount,
+          retryableCount: retryable,
           deviceCount: devices.length,
         },
       });
-      if (result.failureCount > 0) {
+      // Dead tokens are deactivated above and must not trigger a retry;
+      // only transient errors are worth another attempt.
+      if (retryable > 0) {
         throw new Error(
-          `FCM no entregó ${result.failureCount}/${devices.length} mensajes`,
+          `FCM no entregó ${retryable}/${devices.length} mensajes (error transitorio)`,
         );
       }
     } catch (error) {
+      if (error instanceof CallInvitationClosedError) throw error;
       this.logger.warn(
         `No fue posible enviar push FCM de llamada ${call.id}: ${this.getErrorMessage(error)}`,
       );
@@ -507,8 +682,9 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
     call: CallSessionPayload,
     event: ResidentCallPushEvent,
     target: { userType: JwtPayload['type']; userIds: string[] },
+    delivered: Set<string> = new Set(),
   ) {
-    const devices = await this.callDevicesRepository.find({
+    const allDevices = await this.callDevicesRepository.find({
       where: {
         userType: target.userType,
         userId: In(target.userIds),
@@ -517,6 +693,7 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
         isActive: true,
       },
     });
+    const devices = this.pendingDevices(allDevices, delivered);
     if (devices.length === 0) return;
 
     const clientId = this.configService.get<string>('HMS_CLIENT_ID');
@@ -554,6 +731,8 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
       if (!tokenBody.access_token)
         throw new Error('HMS OAuth no devolvió access_token');
 
+      const incomingTtlMs = await this.getIncomingTtlMs(call, event);
+
       const response = await fetch(
         `https://push-api.cloud.huawei.com/v1/${appId}/messages:send`,
         {
@@ -569,7 +748,9 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
               data: JSON.stringify(this.buildFcmData(call, event)),
               android: {
                 urgency: event === 'incoming' ? 'HIGH' : 'NORMAL',
-                ttl: event === 'incoming' ? '45s' : '60s',
+                ttl: incomingTtlMs === null
+                  ? '60s'
+                  : `${Math.max(1, Math.floor(incomingTtlMs / 1000))}s`,
               },
             },
           }),
@@ -580,11 +761,24 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
         code?: string;
         msg?: string;
       };
-      if (responseBody.code !== '80000000') {
+      // 80100000 = partial success: the rest were illegal tokens, which are
+      // permanent, so deactivate them instead of re-sending to everyone.
+      if (responseBody.code === '80100000') {
+        const illegal = new Set(this.parseHmsIllegalTokens(responseBody.msg));
+        const dead = devices.filter((device) => illegal.has(device.token));
+        dead.forEach((device) => {
+          device.isActive = false;
+          device.lastError = 'HMS illegal token';
+        });
+        if (dead.length > 0) await this.callDevicesRepository.save(dead);
+      } else if (responseBody.code !== '80000000') {
         throw new Error(
           `HMS Push ${responseBody.code ?? 'respuesta inválida'}: ${responseBody.msg ?? 'sin detalle'}`,
         );
       }
+      devices.forEach((device) => {
+        if (device.isActive) delivered.add(device.token);
+      });
       await this.callsService.recordTrace(call.id, {
         source: 'api',
         stage: 'push.hms.sent',
@@ -592,6 +786,7 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
         metadata: { event, deviceCount: devices.length },
       });
     } catch (error) {
+      if (error instanceof CallInvitationClosedError) throw error;
       await this.callsService.recordTrace(call.id, {
         source: 'api',
         stage: 'push.hms.error',
@@ -607,16 +802,21 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async sendResidentVoip(call: CallSessionPayload) {
-    const devices = await this.callDevicesRepository.find({
+  private async sendResidentVoip(
+    call: CallSessionPayload,
+    delivered: Set<string> = new Set(),
+    residentIds: string[] = call.targetResidentIds,
+  ) {
+    const allDevices = await this.callDevicesRepository.find({
       where: {
         userType: 'resident',
-        userId: In(call.targetResidentIds),
+        userId: In(residentIds),
         platform: 'ios',
         channel: 'voip',
         isActive: true,
       },
     });
+    const devices = this.pendingDevices(allDevices, delivered);
     if (devices.length === 0) {
       return;
     }
@@ -639,10 +839,14 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
         throw new Error(`APNs ${environment} no está configurado`);
       }
 
+      const incomingTtlMs = (await this.getIncomingTtlMs(call, 'incoming')) ?? 0;
       const note = new apn.Notification();
       note.topic = `${topicBase}.voip`;
       note.priority = 10;
-      note.expiry = Math.floor(Date.now() / 1000) + 60;
+      // iOS must ring for every VoIP push it receives, so APNs has to drop it
+      // once the invitation expired instead of delivering it late.
+      note.expiry = Math.floor((Date.now() + incomingTtlMs) / 1000);
+      note.collapseId = `call-${call.id}`;
       note.contentAvailable = true;
       note.pushType = 'voip';
       note.payload = {
@@ -660,13 +864,18 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
           note,
           group.map((device) => device.token),
         );
-        await this.handleApnFailures(group, response.failed);
-        if (response.failed.length > 0) {
+        response.sent.forEach((sent) => delivered.add(sent.device));
+        const { retryable } = await this.handleApnFailures(
+          group,
+          response.failed,
+        );
+        if (retryable > 0) {
           throw new Error(
-            `APNs no entregó ${response.failed.length}/${group.length} mensajes`,
+            `APNs no entregó ${retryable}/${group.length} mensajes (error transitorio)`,
           );
         }
       } catch (error) {
+        if (error instanceof CallInvitationClosedError) throw error;
         this.logger.warn(
           `No fue posible enviar push VoIP ${environment} para llamada ${call.id}: ${this.getErrorMessage(error)}`,
         );
@@ -764,33 +973,40 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
 
   private async handleFcmFailures(
     devices: CallDevice[],
-    errors: Array<string | null>,
+    errors: Array<{ code?: string; message?: string } | null>,
   ) {
-    const toDeactivate: CallDevice[] = [];
+    const toUpdate: CallDevice[] = [];
+    let retryable = 0;
 
-    errors.forEach((message, index) => {
-      if (!message) {
-        return;
-      }
+    errors.forEach((error, index) => {
       const device = devices[index];
-      if (!device) {
+      if (!error || !device) {
         return;
       }
 
-      device.lastError = message;
+      // firebase-admin puts the stable identifier in `code`; the message is
+      // often just "NotRegistered", so matching on it let dead tokens pile up.
+      const code = error.code ?? '';
+      const message = error.message ?? code;
+      device.lastError = `${code} ${message}`.trim().slice(0, 500);
       if (
+        CallsPushService.PERMANENT_FCM_ERROR_CODES.has(code) ||
         message.includes('registration-token-not-registered') ||
         message.includes('Requested entity was not found') ||
+        message.includes('NotRegistered') ||
         message.includes('invalid-registration-token')
       ) {
         device.isActive = false;
-        toDeactivate.push(device);
+      } else {
+        retryable += 1;
       }
+      toUpdate.push(device);
     });
 
-    if (toDeactivate.length > 0) {
-      await this.callDevicesRepository.save(toDeactivate);
+    if (toUpdate.length > 0) {
+      await this.callDevicesRepository.save(toUpdate);
     }
+    return { retryable };
   }
 
   private async handleApnFailures(
@@ -801,8 +1017,9 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
       response?: { reason?: string };
     }>,
   ) {
+    let retryable = 0;
     if (failures.length === 0) {
-      return;
+      return { retryable };
     }
 
     const byToken = new Map(devices.map((device) => [device.token, device]));
@@ -817,18 +1034,28 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
       const reason =
         failure.response?.reason ?? failure.status ?? 'unknown-apns-error';
       device.lastError = reason;
-      if (
-        ['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic'].includes(
-          reason,
-        )
-      ) {
+      if (CallsPushService.PERMANENT_APNS_REASONS.has(reason)) {
         device.isActive = false;
+      } else {
+        retryable += 1;
       }
       toUpdate.push(device);
     }
 
     if (toUpdate.length > 0) {
       await this.callDevicesRepository.save(toUpdate);
+    }
+    return { retryable };
+  }
+
+  private parseHmsIllegalTokens(msg?: string): string[] {
+    try {
+      const parsed = JSON.parse(msg ?? '') as { illegal_tokens?: unknown };
+      return Array.isArray(parsed.illegal_tokens)
+        ? parsed.illegal_tokens.filter((t): t is string => typeof t === 'string')
+        : [];
+    } catch {
+      return [];
     }
   }
 

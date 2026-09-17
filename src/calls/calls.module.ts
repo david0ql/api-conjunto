@@ -13,6 +13,10 @@ import { CallDevice } from './entities/call-device.entity';
 import { CallSession } from './entities/call-session.entity';
 import { CallTraceEvent } from './entities/call-trace-event.entity';
 import { CallPushJob } from './entities/call-push-job.entity';
+import { CallQueueEntry } from './entities/call-queue-entry.entity';
+import { CallQueueService } from './call-queue.service';
+import { Notification } from '../notifications/entities/notification.entity';
+import { NotificationType } from '../notification-types/entities/notification-type.entity';
 
 @Module({
   imports: [
@@ -26,6 +30,9 @@ import { CallPushJob } from './entities/call-push-job.entity';
       CallDevice,
       CallTraceEvent,
       CallPushJob,
+      CallQueueEntry,
+      Notification,
+      NotificationType,
       Apartment,
       Employee,
       Resident,
@@ -33,7 +40,7 @@ import { CallPushJob } from './entities/call-push-job.entity';
     ]),
   ],
   controllers: [CallsController],
-  providers: [CallsService, CallsPushService, CallsGateway],
+  providers: [CallsService, CallsPushService, CallQueueService, CallsGateway],
   exports: [CallsService, CallsPushService],
 })
 export class CallsModule {}

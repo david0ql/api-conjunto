@@ -49,17 +49,27 @@ describe('CallsPushService outbox', () => {
   const dataSource = {
     transaction: jest.fn((callback) => callback(manager)),
   };
+  const devicesRepository = {
+    find: jest.fn().mockResolvedValue([]),
+    save: jest.fn().mockResolvedValue(undefined),
+  };
+  const callsService = {
+    recordTrace: jest.fn(),
+    getCallStatus: jest.fn().mockResolvedValue('ringing'),
+  };
   const service = new CallsPushService(
-    { find: jest.fn().mockResolvedValue([]) } as never,
+    devicesRepository as never,
     jobsRepository as never,
     dataSource as never,
     { get: jest.fn() } as never,
-    { recordTrace: jest.fn() } as never,
+    callsService as never,
   );
 
   beforeEach(() => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
+    devicesRepository.find.mockResolvedValue([]);
+    callsService.getCallStatus.mockResolvedValue('ringing');
   });
 
   it('enqueues an incoming call once through the unique call/event key', async () => {
@@ -148,5 +158,61 @@ describe('CallsPushService outbox', () => {
     expect(insertBuilder.andWhere).toHaveBeenCalledWith(
       "locked_at < NOW() - INTERVAL '2 minutes'",
     );
+  });
+
+  it('drops a retried incoming push once the call is no longer ringing', async () => {
+    callsService.getCallStatus.mockResolvedValueOnce('active');
+    const sendFcm = jest.spyOn(service as any, 'sendFcm');
+
+    await (service as any).processJob({
+      id: 'job-answered', callSessionId: 'call-1', event: 'incoming', channel: 'fcm', payload: call, attempts: 3,
+    });
+
+    expect(sendFcm).not.toHaveBeenCalled();
+    expect(jobsRepository.update).toHaveBeenCalledWith('job-answered', expect.objectContaining({ status: 'failed' }));
+  });
+
+  it('deactivates dead FCM tokens without retrying and skips already delivered tokens', async () => {
+    const devices = [
+      { token: 'already-rang' },
+      { token: 'good' },
+      { token: 'dead' },
+    ];
+    devicesRepository.find.mockResolvedValueOnce(devices);
+    const sendEachForMulticast = jest.fn().mockResolvedValue({
+      successCount: 1,
+      failureCount: 1,
+      responses: [
+        { success: true },
+        { success: false, error: { code: 'messaging/registration-token-not-registered', message: 'NotRegistered' } },
+      ],
+    });
+    jest.spyOn(service as any, 'getMessagingClient').mockReturnValue({ sendEachForMulticast });
+    const delivered = new Set(['already-rang']);
+
+    await expect(
+      (service as any).sendFcm(call, 'incoming', { userType: 'employee', userIds: ['employee-1'] }, delivered),
+    ).resolves.toBeUndefined();
+
+    expect(sendEachForMulticast).toHaveBeenCalledWith(expect.objectContaining({ tokens: ['good', 'dead'] }));
+    expect(delivered).toEqual(new Set(['already-rang', 'good']));
+    expect(devicesRepository.save).toHaveBeenCalledWith([expect.objectContaining({ token: 'dead', isActive: false })]);
+  });
+
+  it('retries only when FCM reports a transient error', async () => {
+    devicesRepository.find.mockResolvedValueOnce([{ token: 'good' }, { token: 'flaky' }]);
+    jest.spyOn(service as any, 'getMessagingClient').mockReturnValue({
+      sendEachForMulticast: jest.fn().mockResolvedValue({
+        successCount: 1,
+        failureCount: 1,
+        responses: [{ success: true }, { success: false, error: { code: 'messaging/internal-error', message: 'boom' } }],
+      }),
+    });
+    const delivered = new Set<string>();
+
+    await expect(
+      (service as any).sendFcm(call, 'incoming', { userType: 'employee', userIds: ['employee-1'] }, delivered),
+    ).rejects.toThrow('transitorio');
+    expect(delivered).toEqual(new Set(['good']));
   });
 });

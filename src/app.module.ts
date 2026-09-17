@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CacheModule } from '@nestjs/cache-manager';
+import { CallQueueEntry } from './calls/entities/call-queue-entry.entity';
 import { SnakeCaseNamingStrategy } from './common/strategies/snake-case.naming-strategy';
 import { AuthModule } from './auth/auth.module';
 import { ApartmentStatusesModule } from './apartment-statuses/apartment-statuses.module';
@@ -102,7 +103,7 @@ import { Fine } from './fines/entities/fine.entity';
           ReservationStatus, NotificationType, Tower, Apartment, Resident,
           Employee, Visitor, Vehicle, ResidentApartment, AccessAudit,
           PoolEntry, PoolEntryGuest, PoolEntryResident, CommonArea, Reservation, Package, PackagePhoto, Notification, SystemLog,
-          NewsCategory, News, CommunitySpace, CommunitySpaceSchedule, CallDevice, CallSession, CallTraceEvent, CallPushJob,
+          NewsCategory, News, CommunitySpace, CommunitySpaceSchedule, CallDevice, CallSession, CallTraceEvent, CallPushJob, CallQueueEntry,
           FineType, Fine,
           ResidentVehicle,
           Assembly, AssemblyQuestion, AssemblyVote, AssemblyResidentToken,

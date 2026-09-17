@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
+  EntityManager,
   In,
   IsNull,
   LessThanOrEqual,
@@ -40,6 +41,13 @@ interface CallHistoryFilters extends PaginationQueryDto {
   direction?: string;
   createdAt?: string;
 }
+
+// Serialises every "is this person free?" check with the insert/accept that
+// follows it, so two simultaneous calls can never both pass the check.
+const CALL_AVAILABILITY_LOCK = 734_220_901;
+
+/** The porter a resident called is in another call (the resident can queue). */
+export class PorterBusyException extends ConflictException {}
 
 @Injectable()
 export class CallsService {
@@ -80,33 +88,50 @@ export class CallsService {
         `Employee #${input.initiatedByEmployeeId} not found`,
       );
     }
-    await this.assertEmployeeAvailable(
-      employee.id,
-      'Este empleado ya tiene una llamada en curso y no puede iniciar otra todavía',
-    );
 
-    const targetResidentIds = await this.getTargetResidentIdsForApartment(
+    const apartmentResidentIds = await this.getTargetResidentIdsForApartment(
       apartment.id,
     );
-    if (targetResidentIds.length === 0) {
+    if (apartmentResidentIds.length === 0) {
       throw new ConflictException(
         'Este apartamento no tiene residentes activos para recibir la llamada',
       );
     }
 
-    const call = this.callSessionsRepository.create({
-      direction: 'outbound',
-      apartmentId: apartment.id,
-      initiatedByEmployeeId: employee.id,
-      status: 'ringing',
-      targetResidentIds,
-      targetEmployeeIds: [],
-      rejectedResidentIds: [],
-      rejectedEmployeeIds: [],
-      expiresAt: this.newRingingExpiry(),
+    const savedId = await this.withAvailabilityLock(async (manager) => {
+      await this.assertEmployeeAvailable(
+        employee.id,
+        'Este empleado ya tiene una llamada en curso y no puede iniciar otra todavía',
+        undefined,
+        manager,
+      );
+      // A resident already in another call must not get a second invitation:
+      // the app would replace the live call on screen.
+      const busyResidentIds = await this.getBusyResidentIds(manager);
+      const targetResidentIds = apartmentResidentIds.filter(
+        (id) => !busyResidentIds.has(id),
+      );
+      if (targetResidentIds.length === 0) {
+        throw new ConflictException(
+          'Los residentes de este apartamento ya están en otra llamada',
+        );
+      }
+
+      const repository = manager.getRepository(CallSession);
+      const call = repository.create({
+        direction: 'outbound',
+        apartmentId: apartment.id,
+        initiatedByEmployeeId: employee.id,
+        status: 'ringing',
+        targetResidentIds,
+        targetEmployeeIds: [],
+        rejectedResidentIds: [],
+        rejectedEmployeeIds: [],
+        expiresAt: this.newRingingExpiry(),
+      });
+      return (await repository.save(call)).id;
     });
-    const saved = await this.callSessionsRepository.save(call);
-    return this.getPayload(saved.id);
+    return this.getPayload(savedId);
   }
 
   async getPorters(): Promise<CallPorterAvailabilityPayload[]> {
@@ -322,26 +347,37 @@ export class CallsService {
         'El portero seleccionado no existe o no está activo',
       );
     }
-    await this.assertEmployeeAvailable(
-      porter.id,
-      'El portero seleccionado ya está atendiendo otra llamada',
-    );
-
     const apartmentIds = await this.getApartmentIdsForResident(residentId);
 
-    const call = this.callSessionsRepository.create({
-      direction: 'inbound',
-      apartmentId: apartmentIds[0] ?? null,
-      initiatedByResidentId: residentId,
-      status: 'ringing',
-      targetResidentIds: [],
-      targetEmployeeIds: [porter.id],
-      rejectedResidentIds: [],
-      rejectedEmployeeIds: [],
-      expiresAt: this.newRingingExpiry(),
+    const savedId = await this.withAvailabilityLock(async (manager) => {
+      const busyEmployeeIds = await this.getBusyEmployeeIds(undefined, manager);
+      if (busyEmployeeIds.has(porter.id)) {
+        throw new PorterBusyException(
+          'El portero seleccionado ya está atendiendo otra llamada',
+        );
+      }
+      const busyResidentIds = await this.getBusyResidentIds(manager);
+      if (busyResidentIds.has(residentId)) {
+        throw new ConflictException(
+          'Ya tienes una llamada en curso o entrante',
+        );
+      }
+
+      const repository = manager.getRepository(CallSession);
+      const call = repository.create({
+        direction: 'inbound',
+        apartmentId: apartmentIds[0] ?? null,
+        initiatedByResidentId: residentId,
+        status: 'ringing',
+        targetResidentIds: [],
+        targetEmployeeIds: [porter.id],
+        rejectedResidentIds: [],
+        rejectedEmployeeIds: [],
+        expiresAt: this.newRingingExpiry(),
+      });
+      return (await repository.save(call)).id;
     });
-    const saved = await this.callSessionsRepository.save(call);
-    return this.getPayload(saved.id);
+    return this.getPayload(savedId);
   }
 
   async createInternalPorterCall(input: {
@@ -368,36 +404,56 @@ export class CallsService {
       );
     }
 
-    await this.assertEmployeeAvailable(
-      initiator.id,
-      'Ya tienes una llamada en curso y no puedes iniciar otra todavía',
-    );
-    await this.assertEmployeeAvailable(
-      target.id,
-      'El portero seleccionado ya está atendiendo otra llamada',
-    );
+    const savedId = await this.withAvailabilityLock(async (manager) => {
+      await this.assertEmployeeAvailable(
+        initiator.id,
+        'Ya tienes una llamada en curso y no puedes iniciar otra todavía',
+        undefined,
+        manager,
+      );
+      await this.assertEmployeeAvailable(
+        target.id,
+        'El portero seleccionado ya está atendiendo otra llamada',
+        undefined,
+        manager,
+      );
 
-    const call = this.callSessionsRepository.create({
-      direction: 'internal',
-      apartmentId: null,
-      initiatedByEmployeeId: initiator.id,
-      status: 'ringing',
-      targetResidentIds: [],
-      targetEmployeeIds: [target.id],
-      rejectedResidentIds: [],
-      rejectedEmployeeIds: [],
-      expiresAt: this.newRingingExpiry(),
+      const repository = manager.getRepository(CallSession);
+      const call = repository.create({
+        direction: 'internal',
+        apartmentId: null,
+        initiatedByEmployeeId: initiator.id,
+        status: 'ringing',
+        targetResidentIds: [],
+        targetEmployeeIds: [target.id],
+        rejectedResidentIds: [],
+        rejectedEmployeeIds: [],
+        expiresAt: this.newRingingExpiry(),
+      });
+      return (await repository.save(call)).id;
     });
-    const saved = await this.callSessionsRepository.save(call);
-    return this.getPayload(saved.id);
+    return this.getPayload(savedId);
   }
 
   async acceptCall(
     callId: string,
     actor: { id: string; type: JwtPayload['type'] },
   ) {
-    const call = await this.callSessionsRepository.findOne({
+    await this.withAvailabilityLock((manager) =>
+      this.acceptCallLocked(callId, actor, manager),
+    );
+    return this.getPayload(callId);
+  }
+
+  private async acceptCallLocked(
+    callId: string,
+    actor: { id: string; type: JwtPayload['type'] },
+    manager: EntityManager,
+  ) {
+    const repository = manager.getRepository(CallSession);
+    const call = await repository.findOne({
       where: { id: callId },
+      lock: { mode: 'pessimistic_write' },
     });
     if (!call) {
       throw new NotFoundException(`Call #${callId} not found`);
@@ -432,7 +488,7 @@ export class CallsService {
         );
       }
       const acceptedAt = new Date();
-      const result = await this.callSessionsRepository
+      const result = await repository
         .createQueryBuilder()
         .update(CallSession)
         .set({
@@ -463,6 +519,7 @@ export class CallsService {
         employeeId,
         'El empleado ya está atendiendo otra llamada',
         call.id,
+        manager,
       );
       if (
         call.acceptedByEmployeeId &&
@@ -473,7 +530,7 @@ export class CallsService {
         );
       }
       const acceptedAt = new Date();
-      const result = await this.callSessionsRepository
+      const result = await repository
         .createQueryBuilder()
         .update(CallSession)
         .set({
@@ -488,15 +545,29 @@ export class CallsService {
         throw new ConflictException('La llamada ya no esta disponible');
       }
     }
-    return this.getPayload(call.id);
   }
 
   async rejectCall(
     callId: string,
     actor: { id: string; type: JwtPayload['type'] },
   ) {
-    const call = await this.callSessionsRepository.findOne({
+    // The row lock makes a reject that races an accept (two devices of the
+    // same person) see the final state instead of overwriting "active".
+    const outcome = await this.callSessionsRepository.manager.transaction(
+      (manager) => this.rejectCallLocked(callId, actor, manager),
+    );
+    return { ...outcome, call: await this.getPayload(callId) };
+  }
+
+  private async rejectCallLocked(
+    callId: string,
+    actor: { id: string; type: JwtPayload['type'] },
+    manager: EntityManager,
+  ): Promise<{ terminal: boolean; ignored?: boolean }> {
+    const repository = manager.getRepository(CallSession);
+    const call = await repository.findOne({
       where: { id: callId },
+      lock: { mode: 'pessimistic_write' },
     });
     if (!call) {
       throw new NotFoundException(`Call #${callId} not found`);
@@ -517,7 +588,6 @@ export class CallsService {
         return {
           terminal: call.status !== 'active',
           ignored: call.status === 'active',
-          call: await this.getPayload(call.id),
         };
       }
 
@@ -548,7 +618,6 @@ export class CallsService {
         return {
           terminal: call.status !== 'active',
           ignored: call.status === 'active',
-          call: await this.getPayload(call.id),
         };
       }
 
@@ -566,11 +635,8 @@ export class CallsService {
       }
     }
 
-    await this.callSessionsRepository.save(call);
-    return {
-      terminal: call.status === 'rejected',
-      call: await this.getPayload(call.id),
-    };
+    await repository.save(call);
+    return { terminal: call.status === 'rejected' };
   }
 
   async timeoutCall(callId: string) {
@@ -585,6 +651,50 @@ export class CallsService {
       return null;
     }
     return this.getPayload(callId);
+  }
+
+  async isEmployeeBusy(employeeId: string) {
+    return (await this.getBusyEmployeeIds()).has(employeeId);
+  }
+
+  async getActorRole(
+    callId: string,
+    actor: { id: string; type: JwtPayload['type'] },
+  ) {
+    const call = await this.callSessionsRepository.findOne({
+      where: { id: callId },
+      select: {
+        id: true,
+        status: true,
+        direction: true,
+        initiatedByEmployeeId: true,
+        initiatedByResidentId: true,
+        acceptedByEmployeeId: true,
+        acceptedByResidentId: true,
+      },
+    });
+    if (!call) return null;
+    const initiatorId =
+      actor.type === 'employee'
+        ? call.initiatedByEmployeeId
+        : call.initiatedByResidentId;
+    const acceptorId =
+      actor.type === 'employee'
+        ? call.acceptedByEmployeeId
+        : call.acceptedByResidentId;
+    return {
+      status: call.status,
+      isInitiator: initiatorId === actor.id,
+      isAcceptor: acceptorId === actor.id,
+    };
+  }
+
+  async getCallStatus(callId: string): Promise<CallSession['status'] | null> {
+    const call = await this.callSessionsRepository.findOne({
+      where: { id: callId },
+      select: { id: true, status: true },
+    });
+    return call?.status ?? null;
   }
 
   async expireRingingCalls(now = new Date()): Promise<CallSessionPayload[]> {
@@ -605,8 +715,22 @@ export class CallsService {
     actor: { id: string; type: JwtPayload['type'] },
     reason?: string,
   ) {
-    const call = await this.callSessionsRepository.findOne({
+    await this.callSessionsRepository.manager.transaction((manager) =>
+      this.endCallLocked(callId, actor, manager, reason),
+    );
+    return this.getPayload(callId);
+  }
+
+  private async endCallLocked(
+    callId: string,
+    actor: { id: string; type: JwtPayload['type'] },
+    manager: EntityManager,
+    reason?: string,
+  ) {
+    const repository = manager.getRepository(CallSession);
+    const call = await repository.findOne({
       where: { id: callId },
+      lock: { mode: 'pessimistic_write' },
     });
     if (!call) {
       throw new NotFoundException(`Call #${callId} not found`);
@@ -654,7 +778,7 @@ export class CallsService {
       call.status === 'missed' ||
       call.status === 'rejected'
     ) {
-      return this.getPayload(call.id);
+      return;
     }
 
     call.status = 'ended';
@@ -674,8 +798,7 @@ export class CallsService {
           ? 'cancelled'
           : 'rejected');
 
-    await this.callSessionsRepository.save(call);
-    return this.getPayload(call.id);
+    await repository.save(call);
   }
 
   async endOpenCallsForActor(
@@ -1096,19 +1219,90 @@ export class CallsService {
     };
   }
 
+  private async withAvailabilityLock<T>(
+    work: (manager: EntityManager) => Promise<T>,
+  ): Promise<T> {
+    return this.callSessionsRepository.manager.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock($1)', [
+        CALL_AVAILABILITY_LOCK,
+      ]);
+      return work(manager);
+    });
+  }
+
+  /**
+   * Residents taking part in an open call: they started it, accepted it, or
+   * are still being rung by it (and have not rejected it).
+   */
+  private async getBusyResidentIds(manager: EntityManager) {
+    const openCalls = await manager.getRepository(CallSession).find({
+      where: [{ status: 'ringing' }, { status: 'active' }],
+      select: {
+        id: true,
+        status: true,
+        initiatedByResidentId: true,
+        acceptedByResidentId: true,
+        targetResidentIds: true,
+        rejectedResidentIds: true,
+      },
+    });
+
+    const busy = new Set<string>();
+    for (const call of openCalls) {
+      if (call.initiatedByResidentId) busy.add(call.initiatedByResidentId);
+      if (call.acceptedByResidentId) busy.add(call.acceptedByResidentId);
+      if (call.status === 'ringing') {
+        const rejected = new Set(call.rejectedResidentIds ?? []);
+        (call.targetResidentIds ?? [])
+          .filter((id) => !rejected.has(id))
+          .forEach((id) => busy.add(id));
+      }
+    }
+    return busy;
+  }
+
+  /** Users whose phone confirmed (POST /calls/trace) it is showing the invitation. */
+  async getUsersShowingIncomingCall(callId: string, userIds: string[]) {
+    if (userIds.length === 0) return new Set<string>();
+    const events = await this.callTraceEventsRepository.find({
+      where: {
+        callSessionId: callId,
+        source: 'mobile',
+        stage: 'mobile.incoming.system_presented',
+        actorUserId: In(userIds),
+      },
+      select: { id: true, actorUserId: true },
+    });
+    return new Set(
+      events
+        .map((event) => event.actorUserId)
+        .filter((id): id is string => Boolean(id)),
+    );
+  }
+
   private async assertEmployeeAvailable(
     employeeId: string,
     message: string,
     excludeCallId?: string,
+    manager?: EntityManager,
   ) {
-    const busyEmployeeIds = await this.getBusyEmployeeIds(excludeCallId);
+    const busyEmployeeIds = await this.getBusyEmployeeIds(
+      excludeCallId,
+      manager,
+    );
     if (busyEmployeeIds.has(employeeId)) {
       throw new ConflictException(message);
     }
   }
 
-  private async getBusyEmployeeIds(excludeCallId?: string) {
-    const openCalls = await this.callSessionsRepository.find({
+  private async getBusyEmployeeIds(
+    excludeCallId?: string,
+    manager?: EntityManager,
+  ) {
+    const repository = manager
+      ? manager.getRepository(CallSession)
+      : this.callSessionsRepository;
+    const openCalls = await repository.find({
       where: [{ status: 'ringing' }, { status: 'active' }],
       select: {
         id: true,
