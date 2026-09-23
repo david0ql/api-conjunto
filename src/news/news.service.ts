@@ -6,6 +6,7 @@ import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { applyTokenSearch } from '../common/utils/search';
 
 @Injectable()
 export class NewsService {
@@ -17,10 +18,17 @@ export class NewsService {
   async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<News>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [data, total] = await this.repository
+    const qb = this.repository
       .createQueryBuilder('news')
       .leftJoinAndSelect('news.category', 'category')
-      .leftJoinAndSelect('news.createdByEmployee', 'createdByEmployee')
+      .leftJoinAndSelect('news.createdByEmployee', 'createdByEmployee');
+    applyTokenSearch(qb, query.search, [
+      'news.title',
+      'category.name',
+      'createdByEmployee.name',
+      'createdByEmployee.last_name',
+    ]);
+    const [data, total] = await qb
       .orderBy('news.publishedAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)

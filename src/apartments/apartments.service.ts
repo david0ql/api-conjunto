@@ -7,6 +7,7 @@ import { UpdateApartmentDto } from './dto/update-apartment.dto';
 import { Tower } from '../towers/entities/tower.entity';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { applyTokenSearch } from '../common/utils/search';
 
 interface ApartmentFilters extends PaginationQueryDto {
   search?: string;
@@ -48,10 +49,7 @@ export class ApartmentsService {
     if (effectiveTowerId) {
       qb.andWhere('a.tower_id = :towerId', { towerId: effectiveTowerId });
     }
-    if (query.search) {
-      const q = `%${query.search}%`;
-      qb.andWhere('(a.number ILIKE :q OR towerData.name ILIKE :q)', { q });
-    }
+    applyTokenSearch(qb, query.search, ['a.number', 'towerData.name', 'towerData.code']);
     if (query.occupancy === 'occupied') {
       qb.andWhere('(EXISTS (SELECT 1 FROM residents r WHERE r.apartment_id = a.id) OR EXISTS (SELECT 1 FROM resident_apartments ra WHERE ra.apartment_id = a.id))');
     } else if (query.occupancy === 'vacant') {

@@ -5,6 +5,7 @@ import { ResidentApartment } from './entities/resident-apartment.entity';
 import { Resident } from '../residents/entities/resident.entity';
 import { CreateResidentApartmentDto } from './dto/create-resident-apartment.dto';
 import { UpdateResidentApartmentDto } from './dto/update-resident-apartment.dto';
+import { trackedUpdate } from '../change-history/change-recorder';
 
 @Injectable()
 export class ResidentApartmentsService {
@@ -103,7 +104,7 @@ export class ResidentApartmentsService {
       where: { residentId },
       order: { createdAt: 'DESC' },
     });
-    await this.residentsRepository.update(residentId, {
+    await trackedUpdate(this.residentsRepository, residentId, {
       apartmentId: links.length ? links[0].apartmentId : null,
     } as any);
   }

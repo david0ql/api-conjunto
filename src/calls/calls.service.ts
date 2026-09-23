@@ -34,6 +34,7 @@ import {
   paginate,
 } from '../common/dto/paginated-response.dto';
 import { periodToStartDate } from '../common/utils/period-filter';
+import { applyTokenSearch } from '../common/utils/search';
 
 interface CallHistoryFilters extends PaginationQueryDto {
   search?: string;
@@ -203,13 +204,18 @@ export class CallsService {
       .leftJoinAndSelect('cs.acceptedByResident', 'acceptedByResident')
       .leftJoinAndSelect('cs.acceptedByEmployee', 'acceptedByEmployee');
 
-    if (query.search) {
-      const q = `%${query.search}%`;
-      qb.andWhere(
-        '(initiatedByEmployee.name ILIKE :q OR initiatedByEmployee.last_name ILIKE :q OR initiatedByResident.name ILIKE :q OR initiatedByResident.last_name ILIKE :q OR apartment.number ILIKE :q)',
-        { q },
-      );
-    }
+    applyTokenSearch(qb, query.search, [
+      'initiatedByEmployee.name',
+      'initiatedByEmployee.last_name',
+      'initiatedByResident.name',
+      'initiatedByResident.last_name',
+      'acceptedByEmployee.name',
+      'acceptedByEmployee.last_name',
+      'acceptedByResident.name',
+      'acceptedByResident.last_name',
+      'apartment.number',
+      'towerData.name',
+    ]);
     if (query.status) {
       qb.andWhere('cs.status = :status', { status: query.status });
     }

@@ -37,6 +37,8 @@ import { ResidentVehiclesModule } from './resident-vehicles/resident-vehicles.mo
 import { ResidentVehicle } from './resident-vehicles/entities/resident-vehicle.entity';
 import { ResidentRegistrationsModule } from './resident-registrations/resident-registrations.module';
 import { PasswordResetsModule } from './password-resets/password-resets.module';
+import { ChangeHistoryModule } from './change-history/change-history.module';
+import { ChangeLog } from './change-history/entities/change-log.entity';
 import { PasswordResetToken } from './password-resets/entities/password-reset-token.entity';
 import { MailModule } from './mail/mail.module';
 import { RegistrationLink } from './resident-registrations/entities/registration-link.entity';
@@ -110,6 +112,7 @@ import { Fine } from './fines/entities/fine.entity';
           ErrorLog,
           RegistrationLink, RegistrationRequest, RegistrationRequestPerson, RegistrationRequestVehicle,
           PasswordResetToken,
+          ChangeLog,
         ],
         synchronize: true,
         namingStrategy: new SnakeCaseNamingStrategy(),
@@ -149,6 +152,7 @@ import { Fine } from './fines/entities/fine.entity';
     ErrorLogsModule,
     ResidentRegistrationsModule,
     PasswordResetsModule,
+    ChangeHistoryModule,
   ],
 })
 export class AppModule {}

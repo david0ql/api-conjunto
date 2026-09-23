@@ -14,6 +14,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notification-types/entities/notification-type.entity';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { applyTokenSearch } from '../common/utils/search';
 
 type PdfDocument = InstanceType<typeof PDFDocument>;
 
@@ -234,10 +235,14 @@ export class FinesService {
       .leftJoinAndSelect('fine.createdByEmployee', 'createdByEmployee')
       .orderBy('fine.createdAt', 'DESC');
 
-    if (filters.search) {
-      const q = `%${filters.search}%`;
-      qb.andWhere('(apartment.number ILIKE :q OR resident.name ILIKE :q OR resident.last_name ILIKE :q OR fineType.name ILIKE :q OR fine.notes ILIKE :q)', { q });
-    }
+    applyTokenSearch(qb, filters.search, [
+      'apartment.number',
+      'apartmentTower.name',
+      'resident.name',
+      'resident.last_name',
+      'fineType.name',
+      'fine.notes',
+    ]);
 
     if (filters.towerId) {
       qb.andWhere('(apartment.tower_id = :towerId OR residentApartment.tower_id = :towerId)', {

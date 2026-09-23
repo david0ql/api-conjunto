@@ -11,6 +11,7 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { periodToStartDate } from '../common/utils/period-filter';
 import { normalizePlate } from '../common/utils/normalize-plate';
+import { applyTokenSearch } from '../common/utils/search';
 
 interface AccessFilters extends PaginationQueryDto {
   search?: string;
@@ -79,22 +80,19 @@ export class AccessAuditService {
       .leftJoinAndSelect('apartment.towerData', 'towerData')
       .leftJoinAndSelect('a.authorizedByEmployee', 'authorizedByEmployee');
 
-    if (query.search) {
-      const q = `%${query.search}%`;
-      const normalizedPlate = `%${normalizePlate(query.search).replace(/\s+/g, '')}%`;
-      qb.andWhere(
-        `(
-          visitor.name ILIKE :q
-          OR visitor.last_name ILIKE :q
-          OR resident.name ILIKE :q
-          OR resident.last_name ILIKE :q
-          OR a.vehicle_plate ILIKE :q
-          OR REPLACE(COALESCE(a.vehicle_plate, ''), ' ', '') ILIKE :normalizedPlate
-          OR apartment.number ILIKE :q
-        )`,
-        { q, normalizedPlate },
-      );
-    }
+    // La placa también se compara sin espacios: "ABC123" encuentra "ABC 123".
+    applyTokenSearch(qb, query.search, [
+      'visitor.name',
+      'visitor.last_name',
+      'visitor.document',
+      'resident.name',
+      'resident.last_name',
+      'a.vehicle_plate',
+      "REPLACE(COALESCE(a.vehicle_plate, ''), ' ', '')",
+      'vehicleBrand.name',
+      'apartment.number',
+      'towerData.name',
+    ]);
     if (query.type === 'visitor') {
       qb.andWhere('a.visitor_id IS NOT NULL');
     } else if (query.type === 'resident') {

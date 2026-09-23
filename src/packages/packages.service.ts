@@ -10,6 +10,7 @@ import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dt
 import { periodToStartDate } from '../common/utils/period-filter';
 import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
 import { Resident } from '../residents/entities/resident.entity';
+import { applyTokenSearch } from '../common/utils/search';
 
 interface PackageFilters extends PaginationQueryDto {
   search?: string;
@@ -45,10 +46,13 @@ export class PackagesService {
       .leftJoinAndSelect('pkg.deliveredByEmployee', 'deliveredByEmployee')
       .loadRelationCountAndMap('pkg.photoCount', 'pkg.photos');
 
-    if (query.search) {
-      const q = `%${query.search}%`;
-      qb.andWhere('(apartment.number ILIKE :q OR resident.name ILIKE :q OR resident.last_name ILIKE :q OR pkg.description ILIKE :q)', { q });
-    }
+    applyTokenSearch(qb, query.search, [
+      'apartment.number',
+      'towerData.name',
+      'resident.name',
+      'resident.last_name',
+      'pkg.description',
+    ]);
     if (query.delivered !== undefined && query.delivered !== '') {
       qb.andWhere('pkg.delivered = :delivered', { delivered: query.delivered === 'true' });
     }

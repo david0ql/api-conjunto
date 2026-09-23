@@ -7,6 +7,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { ResidentVehiclesService } from './resident-vehicles.service';
 import { CreateResidentVehicleDto } from './dto/create-resident-vehicle.dto';
+import { ReassignResidentVehicleDto } from './dto/reassign-resident-vehicle.dto';
 import { UpdateResidentVehicleDto } from './dto/update-resident-vehicle.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
@@ -54,6 +55,12 @@ export class ResidentVehiclesController {
   @UseGuards(AdminOrPorterGuard)
   update(@Param('id') id: string, @Body() dto: UpdateResidentVehicleDto) {
     return this.service.update(id, dto);
+  }
+
+  @Post(':id/reassign')
+  @UseGuards(AdminOrPorterGuard)
+  reassign(@Param('id') id: string, @Body() dto: ReassignResidentVehicleDto) {
+    return this.service.reassign(id, dto.apartmentId, dto.reason);
   }
 
   @Delete(':id')
