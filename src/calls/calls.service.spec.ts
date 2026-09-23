@@ -28,7 +28,7 @@ const makeRepo = (items: unknown[], total?: number) => {
       .fn()
       .mockResolvedValue([items, total ?? items.length]),
   };
-  return {
+  const repo: Record<string, unknown> = {
     __qb: qb,
     findAndCount: jest.fn().mockResolvedValue([items, total ?? items.length]),
     findOne: jest.fn(),
@@ -38,6 +38,19 @@ const makeRepo = (items: unknown[], total?: number) => {
     create: jest.fn(),
     save: jest.fn(),
     createQueryBuilder: jest.fn().mockReturnValue(qb),
+  };
+  const manager = {
+    query: jest.fn().mockResolvedValue([]),
+    getRepository: jest.fn(() => repo),
+  };
+  repo.manager = {
+    transaction: jest.fn((work: (m: typeof manager) => unknown) => work(manager)),
+  };
+  return repo as typeof repo & {
+    __qb: typeof qb;
+    findOne: jest.Mock;
+    find: jest.Mock;
+    save: jest.Mock;
   };
 };
 
@@ -137,6 +150,30 @@ describe('CallsService.getCallHistory', () => {
       'status = :status',
       { status: 'ringing' },
     );
+    expect(callSessionRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('ignores a delayed reject when the call is already active', async () => {
+    const activeCall = {
+      id: 'active-call',
+      direction: 'inbound',
+      status: 'active',
+      targetEmployeeIds: ['employee-1'],
+      acceptedByEmployeeId: 'employee-1',
+    } as unknown as CallSession;
+    callSessionRepo.findOne.mockResolvedValue(activeCall);
+    jest.spyOn(service, 'getPayload').mockResolvedValue(activeCall as never);
+
+    const result = await service.rejectCall('active-call', {
+      id: 'employee-1',
+      type: 'employee',
+    });
+
+    expect(result).toEqual({
+      terminal: false,
+      ignored: true,
+      call: activeCall,
+    });
     expect(callSessionRepo.save).not.toHaveBeenCalled();
   });
 

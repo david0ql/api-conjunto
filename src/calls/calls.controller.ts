@@ -3,6 +3,8 @@ import {
   Body,
   Controller,
   Get,
+  Param,
+  ParseUUIDPipe,
   Post,
   Query,
   UseGuards,
@@ -18,6 +20,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AdminOrPorterGuard } from '../common/guards/admin-or-porter.guard';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import { CallQueueService } from './call-queue.service';
 import { CallsPushService } from './calls-push.service';
 import { CallsService } from './calls.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
@@ -93,7 +96,21 @@ export class CallsController {
   constructor(
     private readonly callsService: CallsService,
     private readonly callsPushService: CallsPushService,
+    private readonly callQueueService: CallQueueService,
   ) {}
+
+  @Get('queue')
+  @UseGuards(AdminOrPorterGuard)
+  getQueue() {
+    return this.callQueueService.list();
+  }
+
+  @Post('queue/:id/cancel')
+  @UseGuards(AdminOrPorterGuard)
+  async cancelQueueEntry(@Param('id', ParseUUIDPipe) id: string) {
+    await this.callQueueService.cancel(id);
+    return { ok: true };
+  }
 
   @Get('porters')
   getPorters() {

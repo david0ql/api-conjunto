@@ -24,6 +24,16 @@ export class CallPushJob {
   @Column({ type: 'simple-json' })
   payload: CallSessionPayload;
 
+  // Tokens that already received this push. Retries only target the rest, so
+  // a partial failure never makes a device ring twice for the same call.
+  @Column({ name: 'delivered_tokens', type: 'simple-json', nullable: true })
+  deliveredTokens: string[] | null;
+
+  // Targets that were online on a socket when the call started: their push
+  // waits for the app to confirm it is showing the invitation.
+  @Column({ name: 'deferred_user_ids', type: 'simple-json', nullable: true })
+  deferredUserIds: string[] | null;
+
   @Column({ type: 'varchar', length: 20, default: 'pending' })
   status: CallPushJobStatus;
 

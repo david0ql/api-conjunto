@@ -9,16 +9,25 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { JwtService } from '@nestjs/jwt';
-import { Logger, UsePipes, ValidationPipe } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Logger,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
 import { OnModuleDestroy } from '@nestjs/common';
 import { WsException } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import type { CallSignalEnvelope } from './calls.types';
 import { CallsPushService } from './calls-push.service';
-import { CallsService } from './calls.service';
+import { CallQueueService } from './call-queue.service';
+import { CallsService, PorterBusyException } from './calls.service';
 
 type SocketWithUser = Socket & { data: { user?: JwtPayload } };
+
+/** Employees (porters and administrators): receive the call waiting list. */
+const STAFF_ROOM = 'staff';
 
 @WebSocketGateway({
   cors: {
@@ -47,6 +56,8 @@ export class CallsGateway
   private readonly socketsByUserKey = new Map<string, Set<string>>();
   private readonly userBySocketId = new Map<string, JwtPayload>();
   private readonly timeoutByCallId = new Map<string, NodeJS.Timeout>();
+  /** Socket that answered each active call (a phone vs. the same person's other phone). */
+  private readonly acceptedSocketByCallId = new Map<string, string>();
   private readonly disconnectCleanupByUserKey = new Map<
     string,
     NodeJS.Timeout
@@ -57,9 +68,11 @@ export class CallsGateway
     private readonly callsService: CallsService,
     private readonly callsPushService: CallsPushService,
     private readonly jwtService: JwtService,
+    private readonly callQueueService: CallQueueService,
   ) {}
 
   afterInit() {
+    this.callQueueService.onChange(() => void this.emitQueue());
     void this.reconcileExpiredCalls();
     this.reaperInterval = setInterval(
       () => void this.reconcileExpiredCalls(),
@@ -80,6 +93,9 @@ export class CallsGateway
       this.registerSocket(user, client.id);
 
       client.join(this.userRoom(user));
+      if (user.type === 'employee') {
+        client.join(STAFF_ROOM);
+      }
       if (user.type === 'resident') {
         const apartmentIds = await this.callsService.getApartmentIdsForResident(
           user.sub,
@@ -135,10 +151,12 @@ export class CallsGateway
       throw new WsException('apartmentId is required');
     }
 
-    const call = await this.callsService.createCall({
-      apartmentId: body.apartmentId,
-      initiatedByEmployeeId: user.sub,
-    });
+    const call = await this.failInitiationWithCallsError(client, () =>
+      this.callsService.createCall({
+        apartmentId: body.apartmentId!,
+        initiatedByEmployeeId: user.sub,
+      }),
+    );
     void this.callsService
       .recordTrace(call.id, {
         source: 'api',
@@ -157,7 +175,9 @@ export class CallsGateway
         .to(this.userRoom({ sub: residentId, type: 'resident' }))
         .emit('calls:incoming', call);
     });
-    await this.callsPushService.sendIncomingCall(call);
+    await this.callsPushService.sendIncomingCall(call, {
+      socketUserIds: this.connectedUserIds(call.targetResidentIds, 'resident'),
+    });
     await this.emitPorterAvailability();
     this.setTimeoutForCall(call.id);
   }
@@ -175,10 +195,18 @@ export class CallsGateway
       throw new WsException('employeeId is required');
     }
 
-    const call = await this.callsService.createPorterCall(
-      user.sub,
-      body.employeeId,
-    );
+    const call = await this.failInitiationWithCallsError(client, async () => {
+      try {
+        return await this.callsService.createPorterCall(user.sub, body.employeeId!);
+      } catch (error) {
+        if (!(error instanceof PorterBusyException)) throw error;
+        // Busy porter: the resident takes a turn and will be called back.
+        const { position } = await this.callQueueService.enqueue(user.sub, body.employeeId!);
+        throw new PorterBusyException(
+          `Portería está ocupada. Estás de ${position}.º en la fila; el portero te devolverá la llamada.`,
+        );
+      }
+    });
     void this.callsService
       .recordTrace(call.id, {
         source: 'api',
@@ -197,7 +225,9 @@ export class CallsGateway
         .to(this.userRoom({ sub: employeeId, type: 'employee' }))
         .emit('calls:incoming', call);
     });
-    await this.callsPushService.sendIncomingCall(call);
+    await this.callsPushService.sendIncomingCall(call, {
+      socketUserIds: this.connectedUserIds(call.targetEmployeeIds, 'employee'),
+    });
     await this.emitPorterAvailability();
     this.setTimeoutForCall(call.id);
   }
@@ -215,10 +245,12 @@ export class CallsGateway
       throw new WsException('employeeId is required');
     }
 
-    const call = await this.callsService.createInternalPorterCall({
-      initiatedByEmployeeId: user.sub,
-      targetEmployeeId: body.employeeId,
-    });
+    const call = await this.failInitiationWithCallsError(client, () =>
+      this.callsService.createInternalPorterCall({
+        initiatedByEmployeeId: user.sub,
+        targetEmployeeId: body.employeeId!,
+      }),
+    );
     void this.callsService
       .recordTrace(call.id, {
         source: 'api',
@@ -237,7 +269,9 @@ export class CallsGateway
         .to(this.userRoom({ sub: employeeId, type: 'employee' }))
         .emit('calls:incoming', call);
     });
-    await this.callsPushService.sendIncomingCall(call);
+    await this.callsPushService.sendIncomingCall(call, {
+      socketUserIds: this.connectedUserIds(call.targetEmployeeIds, 'employee'),
+    });
     await this.emitPorterAvailability();
     this.setTimeoutForCall(call.id);
   }
@@ -269,8 +303,10 @@ export class CallsGateway
       .catch(() => undefined);
 
     client.join(this.callRoom(call.id));
+    this.acceptedSocketByCallId.set(call.id, client.id);
     this.emitAnsweredElsewhereToOtherUserSockets(client, user, call);
 
+    void this.callQueueService.onCallAccepted(call);
     if (call.direction === 'outbound') {
       this.server.to(this.callRoom(call.id)).emit('calls:accepted', call);
       await this.callsPushService.sendCallState(call, 'accepted');
@@ -306,12 +342,53 @@ export class CallsGateway
       throw new WsException('callId is required');
     }
 
+    // "Reject" pressed by the caller, or by the very phone that answered
+    // (stale button), means "hang up". Another phone of the same person that
+    // rejects after the answer is still ignored below.
+    const role = await this.callsService.getActorRole(body.callId, {
+      id: user.sub,
+      type: user.type,
+    });
+    if (
+      role &&
+      (role.status === 'ringing' || role.status === 'active') &&
+      (role.isInitiator ||
+        (role.status === 'active' &&
+          role.isAcceptor &&
+          this.acceptedSocketByCallId.get(body.callId) === client.id))
+    ) {
+      return this.handleEnd(client, { callId: body.callId });
+    }
+
     const result = await this.callsService.rejectCall(body.callId, {
       id: user.sub,
       type: user.type,
     });
 
+    if (result.ignored) {
+      void this.callsService
+        .recordTrace(result.call.id, {
+          source: 'api',
+          stage: 'call.rejected.late_ignored',
+          message: 'Rechazo tardío ignorado porque la llamada ya está activa',
+          actorUserId: user.sub,
+          actorUserType: user.type,
+          metadata: { direction: result.call.direction },
+        })
+        .catch(() => undefined);
+      return;
+    }
+
     if (!result.terminal) {
+      // The call keeps ringing for other residents, but it is over for this
+      // person: their other phones must stop ringing too, or the next call
+      // they receive would replace this stale invitation on screen.
+      client.to(this.userRoom(user)).emit('calls:ended', {
+        ...result.call,
+        status: 'ended',
+        endedReason: 'rejected_elsewhere',
+        endedAt: result.call.endedAt ?? new Date().toISOString(),
+      });
       void this.callsService
         .recordTrace(result.call.id, {
           source: 'api',
@@ -401,11 +478,21 @@ export class CallsGateway
       throw new WsException('callId is required');
     }
 
-    const call = await this.callsService.endCall(
-      body.callId,
-      { id: user.sub, type: user.type },
-      body.reason,
-    );
+    let call: Awaited<ReturnType<CallsService['endCall']>>;
+    try {
+      call = await this.callsService.endCall(
+        body.callId,
+        { id: user.sub, type: user.type },
+        body.reason,
+      );
+    } catch (error) {
+      // "Hang up" pressed by a callee that never answered (e.g. from the
+      // native call screen) means "reject"; handleReject validates it.
+      if (error instanceof ForbiddenException) {
+        return this.handleReject(client, { callId: body.callId });
+      }
+      throw error;
+    }
     this.clearTimeoutForCall(call.id);
     void this.callsService
       .recordTrace(call.id, {
@@ -513,6 +600,33 @@ export class CallsGateway
         type: user.type,
       },
     });
+  }
+
+  /**
+   * The app only leaves its "calling…" state on `calls:error` (it ignores
+   * `exception` there), so a refused call must say so explicitly.
+   */
+  private async failInitiationWithCallsError<T>(
+    client: SocketWithUser,
+    create: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await create();
+    } catch (error) {
+      client.emit('calls:error', {
+        message: this.getErrorMessage(error),
+      });
+      throw error;
+    }
+  }
+
+  private connectedUserIds(
+    userIds: string[] | null | undefined,
+    type: JwtPayload['type'],
+  ) {
+    return (userIds ?? []).filter((sub) =>
+      this.hasAnyActiveSocketForUser({ sub, type }),
+    );
   }
 
   private authenticateClient(client: SocketWithUser): JwtPayload {
@@ -630,6 +744,8 @@ export class CallsGateway
     eventName: 'calls:ended' | 'calls:missed' | 'calls:rejected',
     call: Awaited<ReturnType<CallsService['getPayload']>>,
   ) {
+    this.acceptedSocketByCallId.delete(call.id);
+    void this.callQueueService.onCallFinished(call);
     if (call.direction === 'outbound') {
       if (call.initiatedByEmployeeId) {
         this.server
@@ -763,6 +879,16 @@ export class CallsGateway
 
   private userRoom(user: Pick<JwtPayload, 'sub' | 'type'>) {
     return `${user.type}:${user.sub}`;
+  }
+
+  private async emitQueue() {
+    try {
+      this.server
+        .to(STAFF_ROOM)
+        .emit('calls:queue-updated', await this.callQueueService.list());
+    } catch (error) {
+      this.logger.warn(`No fue posible emitir la fila: ${this.getErrorMessage(error)}`);
+    }
   }
 
   private async emitPorterAvailability() {
