@@ -6,6 +6,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PasswordResetsService } from './password-resets.service';
 import { RequestResetDto } from './dto/request-reset.dto';
+import { RequestResetByEmailDto } from './dto/request-reset-by-email.dto';
 import { ConfirmResetDto } from './dto/confirm-reset.dto';
 
 @Controller('password-resets')
@@ -17,6 +18,13 @@ export class PasswordResetsController {
   @UseGuards(JwtAuthGuard, AdminOrPorterGuard)
   request(@Body() dto: RequestResetDto, @CurrentUser() user: JwtPayload, @Ip() ip: string) {
     return this.service.requestForResident(dto.residentId, user.sub, ip);
+  }
+
+  /** Public: resident self-service, requests their own reset link by email (rate limited). */
+  @Post('request-by-email')
+  @UseGuards(ResetThrottleGuard)
+  requestByEmail(@Body() dto: RequestResetByEmailDto, @Ip() ip: string) {
+    return this.service.requestForEmail(dto.email, ip);
   }
 
   /** Public: check whether a reset link is still usable (rate limited). */

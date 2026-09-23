@@ -54,9 +54,45 @@ export class PasswordResetsService {
       throw new BadRequestException('El residente no tiene un correo registrado');
     }
 
+    const emailSent = await this.issueAndSend(resident, employeeId ?? null, ip);
+    this.logger.log(
+      `Password reset requested for resident ${resident.id} by employee ${employeeId} (emailSent=${emailSent})`,
+    );
+    return { emailSent };
+  }
+
+  /**
+   * Self-service. A resident requests their own reset link by email.
+   * Looks the account up the same way login does (case/whitespace-insensitive).
+   * Throws NotFoundException when no active resident matches — the caller
+   * (mobile app) surfaces that as "correo no asociado a ningún usuario".
+   */
+  async requestForEmail(rawEmail: string, ip?: string): Promise<{ emailSent: boolean }> {
+    const identifier = rawEmail.trim().toLowerCase();
+    const resident = await this.residentsRepo
+      .createQueryBuilder('resident')
+      .where('LOWER(TRIM(resident.email)) = :identifier', { identifier })
+      .getOne();
+
+    if (!resident || !resident.isActive) {
+      throw new NotFoundException('El correo no está asociado a ningún usuario.');
+    }
+
+    const emailSent = await this.issueAndSend(resident, null, ip);
+    this.logger.log(
+      `Password reset self-requested for resident ${resident.id} (emailSent=${emailSent})`,
+    );
+    return { emailSent };
+  }
+
+  private async issueAndSend(
+    resident: Resident,
+    employeeId: string | null,
+    ip?: string,
+  ): Promise<boolean> {
     // Single active token policy: burn any unused tokens for this resident.
     await this.tokensRepo.update(
-      { residentId, usedAt: IsNull() },
+      { residentId: resident.id, usedAt: IsNull() },
       { usedAt: new Date() },
     );
 
@@ -65,24 +101,19 @@ export class PasswordResetsService {
 
     await this.tokensRepo.save(
       this.tokensRepo.create({
-        residentId,
+        residentId: resident.id,
         tokenHash: this.hashToken(rawToken),
         expiresAt,
-        requestedByEmployeeId: employeeId ?? null,
+        requestedByEmployeeId: employeeId,
         requestIp: ip ?? null,
       }),
     );
 
-    const emailSent = await this.mailService.sendPasswordReset(resident.email.trim(), {
+    return this.mailService.sendPasswordReset(resident.email.trim(), {
       name: `${resident.name} ${resident.lastName}`.trim(),
       resetUrl: this.buildResetUrl(rawToken),
       ttlMinutes: this.ttlMinutes,
     });
-
-    this.logger.log(
-      `Password reset requested for resident ${resident.id} by employee ${employeeId} (emailSent=${emailSent})`,
-    );
-    return { emailSent };
   }
 
   private async findUsableToken(rawToken: string): Promise<PasswordResetToken | null> {
