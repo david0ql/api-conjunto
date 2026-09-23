@@ -31,6 +31,16 @@ export class Employee {
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
+  /**
+   * Overrides the mobile app's default biometric-login eligibility for this
+   * employee. Left null for the client's own default (porters share one
+   * login with no individual user, so biometric is off by default for
+   * them); set true/false here once an employee needs the opposite of that
+   * default.
+   */
+  @Column({ name: 'biometric_login_allowed', type: 'boolean', nullable: true, default: null })
+  biometricLoginAllowed: boolean | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }

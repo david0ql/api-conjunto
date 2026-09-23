@@ -66,6 +66,7 @@ export class AuthService {
         username: true,
         isActive: true,
         passwordHash: true,
+        biometricLoginAllowed: true,
         role: { id: true, code: true, name: true },
       },
     });
@@ -126,6 +127,7 @@ export class AuthService {
         username: true,
         isActive: true,
         createdAt: true,
+        biometricLoginAllowed: true,
         role: { id: true, code: true, name: true },
       },
     });
@@ -174,6 +176,7 @@ export class AuthService {
       role,
       roleLabel: employee.role?.name,
       permissions: this.getEmployeePermissions(role),
+      biometricLoginAllowed: employee.biometricLoginAllowed ?? null,
     };
   }
 

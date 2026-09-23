@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, MaxLength, IsUUID, MinLength, Matches } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsBoolean, MaxLength, IsUUID, MinLength, Matches } from 'class-validator';
 
 export class CreateEmployeeDto {
   @IsString()
@@ -32,4 +32,12 @@ export class CreateEmployeeDto {
   @IsUUID()
   @IsNotEmpty()
   roleId: string;
+
+  /**
+   * Overrides the mobile app's default biometric-login eligibility (off for
+   * shared porter logins). Leave unset to keep the client's own default.
+   */
+  @IsBoolean()
+  @IsOptional()
+  biometricLoginAllowed?: boolean;
 }
