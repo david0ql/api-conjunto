@@ -175,9 +175,11 @@ export class CallsGateway
         .to(this.userRoom({ sub: residentId, type: 'resident' }))
         .emit('calls:incoming', call);
     });
-    await this.callsPushService.sendIncomingCall(call, {
-      socketUserIds: this.connectedUserIds(call.targetResidentIds, 'resident'),
-    });
+    // Every phone of every resident gets the push, even when one of them is
+    // already showing the call over its socket: a resident may carry several
+    // phones and the socket says nothing about which one is showing it. The
+    // app ignores an invitation it is already showing.
+    await this.callsPushService.sendIncomingCall(call);
     await this.emitPorterAvailability();
     this.setTimeoutForCall(call.id);
   }
