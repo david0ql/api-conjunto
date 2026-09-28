@@ -286,6 +286,22 @@ export class FinesService {
       return;
     }
 
+    await this.notificationTypeRepository
+      .createQueryBuilder()
+      .insert()
+      .into(NotificationType)
+      .values({
+        code: 'fine',
+        name: 'Multa',
+        description: 'Infracciones al reglamento registradas por administración o vigilancia',
+      })
+      .orIgnore()
+      .execute()
+      .catch((error: unknown) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`No fue posible asegurar el tipo de notificación de multa: ${reason}`);
+      });
+
     const notificationType =
       (await this.notificationTypeRepository.findOne({ where: { code: 'fine' } })) ??
       (await this.notificationTypeRepository.findOne({ where: { code: 'general' } }));
@@ -295,18 +311,8 @@ export class FinesService {
       return;
     }
 
-    const amount = Number.isFinite(fine.amount)
-      ? new Intl.NumberFormat('es-CO', {
-          style: 'currency',
-          currency: 'COP',
-          maximumFractionDigits: 0,
-        }).format(fine.amount)
-      : `${fine.amount}`;
-
     const fineName = fine.fineTypeNameSnapshot ?? fine.fineType?.name ?? 'Multa';
-    const message = fine.notes?.trim()
-      ? `Se registró una multa (${fineName}) por ${amount}. Detalle: ${fine.notes.trim()}`
-      : `Se registró una multa (${fineName}) por ${amount}.`;
+    const message = `Se registró una infracción al reglamento: ${fineName}.`;
 
     try {
       await this.notificationsService.create({
