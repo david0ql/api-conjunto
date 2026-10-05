@@ -863,7 +863,24 @@ export class CallsGateway
           })
           .catch(() => undefined);
       }
-      if (calls.length > 0) await this.emitPorterAvailability();
+      const staleCalls = await this.callsService.expireStaleActiveCalls();
+      for (const call of staleCalls) {
+        this.logger.warn(`Llamada activa vencida cerrada ${call.id}`);
+        this.clearTimeoutForCall(call.id);
+        this.emitCallTerminalState('calls:ended', call);
+        await this.callsPushService.sendCallState(call, 'ended');
+        void this.callsService
+          .recordTrace(call.id, {
+            source: 'api',
+            stage: 'call.ended.stale_reaper',
+            message: 'Llamada activa sin colgar cerrada por tiempo máximo',
+            metadata: { direction: call.direction },
+          })
+          .catch(() => undefined);
+      }
+      if (calls.length > 0 || staleCalls.length > 0) {
+        await this.emitPorterAvailability();
+      }
     } catch (error) {
       this.logger.error(
         `No fue posible reconciliar llamadas vencidas: ${this.getErrorMessage(error)}`,

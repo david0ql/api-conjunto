@@ -716,6 +716,41 @@ export class CallsService {
     return results;
   }
 
+  /**
+   * Safety net for answered calls nobody hung up: if the phone that answered
+   * dies while the same user keeps another socket open (e.g. the porter's web
+   * panel), the disconnect cleanup never fires and the call would keep both
+   * people "busy" forever. 99% of answered calls last under 3 minutes.
+   */
+  async expireStaleActiveCalls(
+    now = new Date(),
+  ): Promise<CallSessionPayload[]> {
+    const cutoff = new Date(now.getTime() - this.maxActiveCallMs);
+    const stale = await this.callSessionsRepository.find({
+      where: { status: 'active', acceptedAt: LessThanOrEqual(cutoff) },
+      select: { id: true },
+    });
+    const results: CallSessionPayload[] = [];
+    for (const call of stale) {
+      const result = await this.callSessionsRepository
+        .createQueryBuilder()
+        .update(CallSession)
+        .set({ status: 'ended', endedAt: now, endedReason: 'stale_timeout' })
+        .where('id = :callId', { callId: call.id })
+        .andWhere('status = :status', { status: 'active' })
+        .execute();
+      if (result.affected) results.push(await this.getPayload(call.id));
+    }
+    return results;
+  }
+
+  private get maxActiveCallMs() {
+    const minutes = Number(
+      this.configService.get<string>('CALL_MAX_ACTIVE_MINUTES'),
+    );
+    return (minutes > 0 ? minutes : 5) * 60_000;
+  }
+
   async endCall(
     callId: string,
     actor: { id: string; type: JwtPayload['type'] },
