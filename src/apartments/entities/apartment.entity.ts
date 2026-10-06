@@ -31,4 +31,7 @@ export class Apartment {
 
   // Virtual field populated by service — not a DB column
   residentCount?: number;
+
+  // Virtual field populated by service — not a DB column
+  hasAppResident?: boolean;
 }

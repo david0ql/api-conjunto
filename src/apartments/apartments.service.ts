@@ -36,7 +36,27 @@ export class ApartmentsService {
        ) t GROUP BY apartment_id`,
     );
     const countMap = new Map(rows.map((r) => [r.apartment_id, parseInt(r.count, 10)]));
-    return apartments.map((apt) => ({ ...apt, residentCount: countMap.get(apt.id) ?? 0 }));
+
+    // "Has app resident" means at least one resident linked to the apartment
+    // has an active call_devices row, i.e. has logged in and registered the
+    // app for push/calls — not merely that a resident record exists.
+    const appRows: { apartment_id: string; has_app: boolean }[] = await this.repository.query(
+      `SELECT t.apartment_id, COUNT(cd.id) > 0 AS has_app FROM (
+         SELECT resident_id, apartment_id FROM resident_apartments
+         UNION
+         SELECT id AS resident_id, apartment_id FROM residents WHERE apartment_id IS NOT NULL
+       ) t
+       LEFT JOIN call_devices cd
+         ON cd.user_id = t.resident_id AND cd.user_type = 'resident' AND cd.is_active = true
+       GROUP BY t.apartment_id`,
+    );
+    const appMap = new Map(appRows.map((r) => [r.apartment_id, r.has_app]));
+
+    return apartments.map((apt) => ({
+      ...apt,
+      residentCount: countMap.get(apt.id) ?? 0,
+      hasAppResident: appMap.get(apt.id) ?? false,
+    }));
   }
 
   async findAll(towerId?: string, query: ApartmentFilters = {}): Promise<PaginatedResponse<Apartment>> {
