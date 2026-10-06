@@ -12,6 +12,7 @@ import { Resident } from '../residents/entities/resident.entity';
 import { Visitor } from '../visitors/entities/visitor.entity';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { PoolEntriesQueryDto } from './dto/pool-entries-query.dto';
+import { applyTokenSearch, sqlUnaccent } from '../common/utils/search';
 
 type PoolReportFilters = {
   dateFrom?: string;
@@ -63,6 +64,28 @@ export class PoolEntriesService {
     if (query.towerId) {
       qb.andWhere('apartment.towerId = :towerId', { towerId: query.towerId });
     }
+
+    // Residentes e invitados se buscan con EXISTS para no recortar las listas
+    // que se devuelven de cada ingreso.
+    applyTokenSearch(
+      qb,
+      query.search,
+      ['apartment.number', 'tower.name', 'entry.notes'],
+      (p) => [
+        `EXISTS (
+          SELECT 1 FROM pool_entry_residents per
+          JOIN residents pr ON pr.id = per.resident_id
+          WHERE per.pool_entry_id = entry.id
+            AND (${sqlUnaccent('pr.name')} ILIKE :${p} OR ${sqlUnaccent('pr.last_name')} ILIKE :${p})
+        )`,
+        `EXISTS (
+          SELECT 1 FROM pool_entry_guests peg
+          LEFT JOIN visitors pv ON pv.id = peg.visitor_id
+          WHERE peg.pool_entry_id = entry.id
+            AND (${sqlUnaccent('peg.name')} ILIKE :${p} OR ${sqlUnaccent('pv.document')} ILIKE :${p})
+        )`,
+      ],
+    );
 
     if (query.apartmentId) {
       qb.andWhere('entry.apartmentId = :apartmentId', { apartmentId: query.apartmentId });

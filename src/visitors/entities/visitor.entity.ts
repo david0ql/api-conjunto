@@ -25,4 +25,19 @@ export class Visitor {
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
+
+  /** Último ingreso del visitante; lo llena VisitorsService en los listados (no es columna). */
+  lastAccess?: VisitorLastAccess | null;
+}
+
+export interface VisitorLastAccess {
+  entryTime: Date;
+  exitTime: Date | null;
+  visitorCategory: string;
+  apartment: {
+    id: string;
+    number: string;
+    tower: { id: string; code: string; name: string } | null;
+  } | null;
+  porter: { id: string; name: string; lastName: string } | null;
 }

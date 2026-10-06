@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ResidentVehicle } from './entities/resident-vehicle.entity';
@@ -7,6 +7,10 @@ import { UpdateResidentVehicleDto } from './dto/update-resident-vehicle.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { normalizePlate } from '../common/utils/normalize-plate';
+import { trackedUpdate } from '../change-history/change-recorder';
+import { setChangeReason } from '../change-history/change-context';
+import { Apartment } from '../apartments/entities/apartment.entity';
+import { applyTokenSearch } from '../common/utils/search';
 
 interface VehicleFilters extends PaginationQueryDto {
   search?: string;
@@ -29,19 +33,14 @@ export class ResidentVehiclesService {
       .leftJoinAndSelect('rv.vehicleBrand', 'vehicleBrand')
       .leftJoinAndSelect('rv.createdByEmployee', 'createdByEmployee');
 
-    if (query.search) {
-      const q = `%${query.search}%`;
-      const normalizedPlate = `%${normalizePlate(query.search).replace(/\s+/g, '')}%`;
-      qb.andWhere(
-        `(
-          rv.plate ILIKE :q
-          OR REPLACE(COALESCE(rv.plate, ''), ' ', '') ILIKE :normalizedPlate
-          OR vehicleBrand.name ILIKE :q
-          OR apartment.number ILIKE :q
-        )`,
-        { q, normalizedPlate },
-      );
-    }
+    // La placa también se compara sin espacios: "ABC123" encuentra "ABC 123".
+    applyTokenSearch(qb, query.search, [
+      'rv.plate',
+      "REPLACE(COALESCE(rv.plate, ''), ' ', '')",
+      'vehicleBrand.name',
+      'apartment.number',
+      'towerData.name',
+    ]);
     if (query.apartmentId) {
       qb.andWhere('rv.apartment_id = :apartmentId', { apartmentId: query.apartmentId });
     }
@@ -144,7 +143,7 @@ export class ResidentVehiclesService {
       await this.assertPlateIsAvailable(dto.plate, dto.apartmentId ?? item.apartmentId, id);
     }
 
-    await this.repository.update(id, {
+    await trackedUpdate(this.repository, id, {
       apartmentId: dto.apartmentId ?? item.apartmentId,
       vehicleBrandId: dto.vehicleBrandId ?? item.vehicleBrandId,
       vehicleType: dto.vehicleType ?? item.vehicleType,
@@ -154,6 +153,20 @@ export class ResidentVehiclesService {
       notes: dto.notes !== undefined ? (dto.notes?.trim() || null) : item.notes,
     });
 
+    return this.findOne(id);
+  }
+
+  /** Mueve el vehículo a otro apartamento (p. ej. se registró en el apartamento equivocado). */
+  async reassign(id: string, apartmentId: string, reason?: string): Promise<ResidentVehicle> {
+    const item = await this.findOne(id);
+    if (item.apartmentId === apartmentId) {
+      throw new BadRequestException('El vehículo ya pertenece a ese apartamento');
+    }
+    const apartmentExists = await this.repository.manager.exists(Apartment, { where: { id: apartmentId } });
+    if (!apartmentExists) throw new NotFoundException('Apartamento no encontrado');
+
+    setChangeReason(reason);
+    await trackedUpdate(this.repository, id, { apartmentId });
     return this.findOne(id);
   }
 

@@ -9,6 +9,7 @@ import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { periodToStartDate } from '../common/utils/period-filter';
+import { applyTokenSearch } from '../common/utils/search';
 
 interface ReservationFilters extends PaginationQueryDto {
   search?: string;
@@ -35,10 +36,7 @@ export class ReservationsService {
       .leftJoinAndSelect('r.area', 'area')
       .leftJoinAndSelect('r.status', 'status');
 
-    if (query.search) {
-      const q = `%${query.search}%`;
-      qb.andWhere('(resident.name ILIKE :q OR resident.last_name ILIKE :q OR area.name ILIKE :q)', { q });
-    }
+    applyTokenSearch(qb, query.search, ['resident.name', 'resident.last_name', 'area.name']);
     if (query.status) {
       qb.andWhere('status.code = :status', { status: query.status });
     }

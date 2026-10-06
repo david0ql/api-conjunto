@@ -4,7 +4,16 @@ import { CommonAreasService } from './common-areas.service';
 import { CommonArea } from './entities/common-area.entity';
 import { Reservation } from '../reservations/entities/reservation.entity';
 
+const mockQb = (items: unknown[], total: number) => ({
+  andWhere: jest.fn().mockReturnThis(),
+  orderBy: jest.fn().mockReturnThis(),
+  skip: jest.fn().mockReturnThis(),
+  take: jest.fn().mockReturnThis(),
+  getManyAndCount: jest.fn().mockResolvedValue([items, total]),
+});
+
 const makeRepo = (items: unknown[], total?: number) => ({
+  createQueryBuilder: jest.fn().mockReturnValue(mockQb(items, total ?? items.length)),
   findAndCount: jest.fn().mockResolvedValue([items, total ?? items.length]),
   findOne: jest.fn(),
   find: jest.fn().mockResolvedValue(items),
@@ -39,17 +48,26 @@ describe('CommonAreasService.findAll', () => {
     expect(result.meta.totalPages).toBe(1);
   });
 
-  it('passes skip/take to repository', async () => {
+  it('passes skip/take to the query', async () => {
     await service.findAll({ page: 1, limit: 5 });
-    expect(repo.findAndCount).toHaveBeenCalledWith(
-      expect.objectContaining({ skip: 0, take: 5 }),
-    );
+    const qb = repo.createQueryBuilder.mock.results[0].value;
+    expect(qb.skip).toHaveBeenCalledWith(0);
+    expect(qb.take).toHaveBeenCalledWith(5);
   });
 
   it('defaults to page=1 limit=15', async () => {
     await service.findAll();
-    expect(repo.findAndCount).toHaveBeenCalledWith(
-      expect.objectContaining({ skip: 0, take: 15 }),
+    const qb = repo.createQueryBuilder.mock.results[0].value;
+    expect(qb.skip).toHaveBeenCalledWith(0);
+    expect(qb.take).toHaveBeenCalledWith(15);
+  });
+
+  it('filters by every word of the search', async () => {
+    await service.findAll({ search: 'Salón Social' });
+    const qb = repo.createQueryBuilder.mock.results[0].value;
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining('area.name'),
+      { search_0: '%salon%', search_1: '%social%' },
     );
   });
 });

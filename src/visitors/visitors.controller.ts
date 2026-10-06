@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -39,9 +40,26 @@ export class VisitorsController {
     @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('all') all?: string,
+    @Query('towerId', new ParseUUIDPipe({ optional: true })) towerId?: string,
+    @Query('apartmentId', new ParseUUIDPipe({ optional: true })) apartmentId?: string,
+    @Query('porterId', new ParseUUIDPipe({ optional: true })) porterId?: string,
   ) {
     if (all === 'true') return this.service.findAllUnpaginated();
-    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search });
+    return this.service.findAll({
+      page: page ? +page : 1,
+      limit: limit ? +limit : 15,
+      search,
+      towerId,
+      apartmentId,
+      porterId,
+    });
+  }
+
+  /** Porteros que han registrado ingresos de visitantes (para el filtro "Registró"). */
+  @Get('porters')
+  @UseGuards(EmployeeGuard)
+  findPorters() {
+    return this.service.findPorters();
   }
 
   @Get('search')

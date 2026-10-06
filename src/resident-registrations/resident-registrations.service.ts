@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -20,6 +20,7 @@ import { Tower } from '../towers/entities/tower.entity';
 import { Apartment } from '../apartments/entities/apartment.entity';
 import { ResidentType } from '../resident-types/entities/resident-type.entity';
 import { MailService } from '../mail/mail.service';
+import { trackedUpdate } from '../change-history/change-recorder';
 
 export type ApprovalMode = 'replace' | 'merge';
 
@@ -440,7 +441,9 @@ export class ResidentRegistrationsService {
       });
       const currentResidentIds = currentLinks.map((l) => l.residentId);
       if (currentResidentIds.length) {
-        await this.residentsRepo.update({ id: In(currentResidentIds) }, { isActive: false });
+        for (const currentResidentId of currentResidentIds) {
+          await trackedUpdate(this.residentsRepo, currentResidentId, { isActive: false });
+        }
       }
     }
 
@@ -482,12 +485,12 @@ export class ResidentRegistrationsService {
         updateData.isActive = true;
         if (Object.keys(updateData).length) {
           try {
-            await this.residentsRepo.update(residentId, updateData as any);
+            await trackedUpdate(this.residentsRepo, residentId, updateData as any);
           } catch {
             // Likely a unique email conflict: retry without the email field
             delete (updateData as any).email;
             if (Object.keys(updateData).length) {
-              await this.residentsRepo.update(residentId, updateData as any);
+              await trackedUpdate(this.residentsRepo, residentId, updateData as any);
             }
           }
         }
@@ -528,7 +531,7 @@ export class ResidentRegistrationsService {
             const destDir = path.dirname(dest);
             if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
             fs.copyFileSync(person.photoPath, dest);
-            await this.residentsRepo.update(residentId, { photoPath: dest });
+            await trackedUpdate(this.residentsRepo, residentId, { photoPath: dest });
           } catch {
             // Non-fatal: skip photo copy on error
           }

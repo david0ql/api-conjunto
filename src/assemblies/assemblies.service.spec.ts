@@ -7,7 +7,16 @@ import { AssemblyVote } from './entities/assembly-vote.entity';
 import { AssemblyResidentToken } from './entities/assembly-resident-token.entity';
 import { Resident } from '../residents/entities/resident.entity';
 
+const mockQb = (items: unknown[], total: number) => ({
+  andWhere: jest.fn().mockReturnThis(),
+  orderBy: jest.fn().mockReturnThis(),
+  skip: jest.fn().mockReturnThis(),
+  take: jest.fn().mockReturnThis(),
+  getManyAndCount: jest.fn().mockResolvedValue([items, total]),
+});
+
 const makeRepo = (items: unknown[], total?: number) => ({
+  createQueryBuilder: jest.fn().mockReturnValue(mockQb(items, total ?? items.length)),
   findAndCount: jest.fn().mockResolvedValue([items, total ?? items.length]),
   findOne: jest.fn().mockResolvedValue(items[0] ?? null),
   find: jest.fn().mockResolvedValue(items),
@@ -54,18 +63,19 @@ describe('AssembliesService.findAll', () => {
     expect(result.meta.totalPages).toBe(2);
   });
 
-  it('passes skip/take to findAndCount', async () => {
+  it('passes skip/take to the query', async () => {
     await service.findAll({ page: 2, limit: 10 });
-    expect(repo.findAndCount).toHaveBeenCalledWith(
-      expect.objectContaining({ skip: 10, take: 10 }),
-    );
+    const qb = repo.createQueryBuilder.mock.results[0].value;
+    expect(qb.skip).toHaveBeenCalledWith(10);
+    expect(qb.take).toHaveBeenCalledWith(10);
   });
 
   it('defaults to page=1 limit=15', async () => {
-    repo.findAndCount.mockResolvedValueOnce([[], 0]);
+    // createQueryBuilder always returns the same mock query builder.
+    const qb = repo.createQueryBuilder();
+    qb.getManyAndCount.mockResolvedValueOnce([[], 0]);
     await service.findAll();
-    expect(repo.findAndCount).toHaveBeenCalledWith(
-      expect.objectContaining({ skip: 0, take: 15 }),
-    );
+    expect(qb.skip).toHaveBeenCalledWith(0);
+    expect(qb.take).toHaveBeenCalledWith(15);
   });
 });

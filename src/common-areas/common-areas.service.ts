@@ -7,6 +7,7 @@ import { UpdateCommonAreaDto } from './dto/update-common-area.dto';
 import { Reservation } from '../reservations/entities/reservation.entity';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { applyTokenSearch } from '../common/utils/search';
 
 @Injectable()
 export class CommonAreasService {
@@ -20,11 +21,13 @@ export class CommonAreasService {
   async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<CommonArea>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [data, total] = await this.repository.findAndCount({
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.repository.createQueryBuilder('area');
+    applyTokenSearch(qb, query.search, ['area.name', 'area.description']);
+    const [data, total] = await qb
+      .orderBy('area.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
     return paginate(data, total, page, limit);
   }
 

@@ -6,11 +6,37 @@ import { CreateVisitorDto } from './dto/create-visitor.dto';
 import { UpdateVisitorDto } from './dto/update-visitor.dto';
 import { AccessAudit } from '../access-audit/entities/access-audit.entity';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { applyTokenSearch } from '../common/utils/search';
 
-interface VisitorListFilters {
+interface VisitorVisitFilters {
+  towerId?: string;
+  apartmentId?: string;
+  /** Portero (empleado) que registró el ingreso. */
+  porterId?: string;
+}
+
+interface VisitorListFilters extends VisitorVisitFilters {
   page?: number;
   limit?: number;
   search?: string;
+}
+
+/** Condiciones sobre un ingreso (access_audit con alias `alias`) según los filtros de visita. */
+function visitConditions(alias: string, filters: VisitorVisitFilters) {
+  const conditions: string[] = [];
+  if (filters.apartmentId) conditions.push(`${alias}.apartment_id = :visitApartmentId`);
+  if (filters.towerId) {
+    conditions.push(`${alias}.apartment_id IN (SELECT id FROM apartments WHERE tower_id = :visitTowerId)`);
+  }
+  if (filters.porterId) conditions.push(`${alias}.authorized_by_employee_id = :visitPorterId`);
+  return {
+    conditions,
+    params: {
+      visitApartmentId: filters.apartmentId,
+      visitTowerId: filters.towerId,
+      visitPorterId: filters.porterId,
+    },
+  };
 }
 
 export interface VisitorSearchResult {
@@ -32,20 +58,39 @@ export class VisitorsService {
     const limit = filters.limit ?? 15;
     const qb = this.repository.createQueryBuilder('v');
 
-    if (filters.search) {
-      const q = `%${filters.search}%`;
-      qb.andWhere('(v.name ILIKE :q OR v.last_name ILIKE :q OR v.document ILIKE :q OR v.phone ILIKE :q)', { q });
+    applyTokenSearch(qb, filters.search, ['v.name', 'v.last_name', 'v.document', 'v.phone']);
+
+    // Visitantes con al menos un ingreso que cumpla TODOS los filtros de visita.
+    const visit = visitConditions('acc', filters);
+    if (visit.conditions.length > 0) {
+      qb.andWhere(
+        `EXISTS (SELECT 1 FROM access_audit acc WHERE acc.visitor_id = v.id AND ${visit.conditions.join(' AND ')})`,
+        visit.params,
+      );
     }
 
     const [data, total] = await qb.orderBy('v.created_at', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
-    await this.applyLatestAccessPhotoFallback(data);
+    // Con filtros, la "última visita" mostrada es la última que cumple el filtro.
+    await this.applyLatestAccess(data, filters);
     return paginate(data, total, page, limit);
   }
 
   async findAllUnpaginated(): Promise<Visitor[]> {
     const visitors = await this.repository.find({ order: { createdAt: 'DESC' } });
-    await this.applyLatestAccessPhotoFallback(visitors);
+    await this.applyLatestAccess(visitors);
     return visitors;
+  }
+
+  async findPorters(): Promise<Array<{ id: string; name: string; lastName: string }>> {
+    return this.accessAuditRepository.manager.query(
+      `SELECT e.id, e.name, e.last_name AS "lastName"
+         FROM employees e
+        WHERE EXISTS (
+          SELECT 1 FROM access_audit a
+           WHERE a.authorized_by_employee_id = e.id AND a.visitor_id IS NOT NULL
+        )
+        ORDER BY e.name, e.last_name`,
+    );
   }
 
   async findOne(id: string): Promise<Visitor> {
@@ -102,25 +147,62 @@ export class VisitorsService {
     await this.repository.remove(item);
   }
 
-  private async applyLatestAccessPhotoFallback(visitors: Visitor[]): Promise<void> {
-    await Promise.all(
-      visitors.map(async (visitor) => {
-        const lastAccessWithPhoto = await this.accessAuditRepository.findOne({
-          where: { visitorId: visitor.id },
-          order: { entryTime: 'DESC' },
-        });
-        if (!lastAccessWithPhoto?.visitorPhotoPath?.trim()) return;
-        const lastAccessPhoto = lastAccessWithPhoto.visitorPhotoPath.trim();
+  /**
+   * Adjunta a cada visitante su último ingreso (cuándo, a qué torre/apartamento
+   * y qué portero lo registró) y usa la foto de ese ingreso si es más reciente.
+   * Una sola consulta con DISTINCT ON en vez de una por visitante.
+   */
+  private async applyLatestAccess(visitors: Visitor[], filters: VisitorVisitFilters = {}): Promise<void> {
+    if (visitors.length === 0) return;
+    const visit = visitConditions('a', filters);
+    const latestQuery = this.accessAuditRepository
+      .createQueryBuilder('a')
+      .distinctOn(['a.visitor_id'])
+      .leftJoinAndSelect('a.apartment', 'apartment')
+      .leftJoinAndSelect('apartment.towerData', 'towerData')
+      .leftJoinAndSelect('a.authorizedByEmployee', 'employee')
+      .where('a.visitor_id IN (:...ids)', { ids: visitors.map((v) => v.id) });
+    for (const condition of visit.conditions) latestQuery.andWhere(condition, visit.params);
+    const latestAccesses = await latestQuery
+      .orderBy('a.visitor_id')
+      .addOrderBy('a.entry_time', 'DESC')
+      .getMany();
+    const byVisitor = new Map(latestAccesses.map((access) => [access.visitorId, access]));
 
-        const accessIsNewer =
-          visitor.photoUpdatedAt != null &&
-          lastAccessWithPhoto.entryTime != null &&
-          lastAccessWithPhoto.entryTime > visitor.photoUpdatedAt;
+    for (const visitor of visitors) {
+      const access = byVisitor.get(visitor.id);
+      if (!access) {
+        visitor.lastAccess = null;
+        continue;
+      }
 
-        if (!visitor.photoPath || accessIsNewer) {
-          visitor.photoPath = lastAccessPhoto;
-        }
-      }),
-    );
+      visitor.lastAccess = {
+        entryTime: access.entryTime,
+        exitTime: access.exitTime,
+        visitorCategory: access.visitorCategory,
+        apartment: access.apartment
+          ? {
+              id: access.apartment.id,
+              number: access.apartment.number,
+              tower: access.apartment.towerData
+                ? { id: access.apartment.towerData.id, code: access.apartment.towerData.code, name: access.apartment.towerData.name }
+                : null,
+            }
+          : null,
+        porter: access.authorizedByEmployee
+          ? { id: access.authorizedByEmployee.id, name: access.authorizedByEmployee.name, lastName: access.authorizedByEmployee.lastName }
+          : null,
+      };
+
+      const lastAccessPhoto = access.visitorPhotoPath?.trim();
+      if (!lastAccessPhoto) continue;
+      const accessIsNewer =
+        visitor.photoUpdatedAt != null &&
+        access.entryTime != null &&
+        access.entryTime > visitor.photoUpdatedAt;
+      if (!visitor.photoPath || accessIsNewer) {
+        visitor.photoPath = lastAccessPhoto;
+      }
+    }
   }
 }

@@ -24,6 +24,7 @@ import type {
 } from './types/assembly.types';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { applyTokenSearch } from '../common/utils/search';
 
 @Injectable()
 export class AssembliesService {
@@ -67,11 +68,13 @@ export class AssembliesService {
   async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<AssemblyPayload>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 15;
-    const [assemblies, total] = await this.assembliesRepository.findAndCount({
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.assembliesRepository.createQueryBuilder('assembly');
+    applyTokenSearch(qb, query.search, ['assembly.title', 'assembly.description', 'assembly.scheduled_date']);
+    const [assemblies, total] = await qb
+      .orderBy('assembly.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
     const data = await Promise.all(assemblies.map((a) => this.buildPayload(a.id)));
     return paginate(data, total, page, limit);
   }

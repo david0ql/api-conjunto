@@ -15,6 +15,9 @@ async function bootstrap() {
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     credentials: true,
+    // Let browsers cache the preflight (Chrome caps it at 2h) so each request
+    // doesn't pay an extra OPTIONS round trip.
+    maxAge: 7200,
   });
   app.useGlobalPipes(
     new ValidationPipe({

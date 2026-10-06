@@ -200,4 +200,34 @@ describe('CallsService.getCallHistory', () => {
       }),
     );
   });
+
+  it('ends active calls answered longer ago than the max duration', async () => {
+    callSessionRepo.find.mockResolvedValue([
+      { id: 'stale-1' },
+      { id: 'stale-2' },
+    ]);
+    callSessionRepo.__qb.execute
+      .mockResolvedValueOnce({ affected: 1 })
+      .mockResolvedValueOnce({ affected: 0 });
+    jest
+      .spyOn(service, 'getPayload')
+      .mockResolvedValue({ id: 'stale-1' } as never);
+    const now = new Date('2026-10-05T15:00:00Z');
+
+    const result = await service.expireStaleActiveCalls(now);
+
+    expect(result).toEqual([{ id: 'stale-1' }]);
+    const { where } = callSessionRepo.find.mock.calls[0][0];
+    expect(where.status).toBe('active');
+    expect(where.acceptedAt.value).toEqual(
+      new Date('2026-10-05T14:55:00Z'),
+    );
+    expect(callSessionRepo.__qb.set).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'ended', endedReason: 'stale_timeout' }),
+    );
+    expect(callSessionRepo.__qb.andWhere).toHaveBeenCalledWith(
+      'status = :status',
+      { status: 'active' },
+    );
+  });
 });

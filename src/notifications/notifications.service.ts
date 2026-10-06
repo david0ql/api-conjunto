@@ -11,6 +11,7 @@ import { CallsPushService } from '../calls/calls-push.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { periodToStartDate } from '../common/utils/period-filter';
+import { applyTokenSearch } from '../common/utils/search';
 
 interface NotificationFilters extends PaginationQueryDto {
   search?: string;
@@ -40,10 +41,14 @@ export class NotificationsService {
       .leftJoinAndSelect('n.resident', 'resident')
       .leftJoinAndSelect('n.notificationType', 'notificationType');
 
-    if (query.search) {
-      const q = `%${query.search}%`;
-      qb.andWhere('(n.message ILIKE :q OR apartment.number ILIKE :q)', { q });
-    }
+    applyTokenSearch(qb, query.search, [
+      'n.message',
+      'notificationType.name',
+      'apartment.number',
+      'towerData.name',
+      'resident.name',
+      'resident.last_name',
+    ]);
     if (query.isRead !== undefined && query.isRead !== '') {
       qb.andWhere('n.is_read = :isRead', { isRead: query.isRead === 'true' });
     }

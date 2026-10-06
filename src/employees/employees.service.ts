@@ -7,6 +7,7 @@ import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
+import { applyTokenSearch } from '../common/utils/search';
 
 interface EmployeeFilters extends PaginationQueryDto {
   search?: string;
@@ -26,10 +27,7 @@ export class EmployeesService {
     const limit = query.limit ?? 15;
     const qb = this.repository.createQueryBuilder('e').leftJoinAndSelect('e.role', 'role');
 
-    if (query.search) {
-      const q = `%${query.search}%`;
-      qb.andWhere('(e.name ILIKE :q OR e.last_name ILIKE :q OR e.username ILIKE :q OR e.document ILIKE :q)', { q });
-    }
+    applyTokenSearch(qb, query.search, ['e.name', 'e.last_name', 'e.username', 'e.document']);
     if (query.roleId) {
       qb.andWhere('e.role_id = :roleId', { roleId: query.roleId });
     }

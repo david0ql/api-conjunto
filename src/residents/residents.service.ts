@@ -14,6 +14,8 @@ import { ResidentVehicle } from '../resident-vehicles/entities/resident-vehicle.
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { periodToStartDate } from '../common/utils/period-filter';
+import { applyTokenSearch, sqlUnaccent } from '../common/utils/search';
+import { trackedUpdate } from '../change-history/change-recorder';
 
 interface ResidentFilters extends PaginationQueryDto {
   search?: string;
@@ -21,33 +23,6 @@ interface ResidentFilters extends PaginationQueryDto {
   isActive?: string;
   hasApartment?: string;
   towerId?: string;
-}
-
-// Transliteración acento→base para la búsqueda: el usuario escribe "Andres" y
-// debe encontrar "Andrés", "Nuñez" debe encontrar "Núñez", etc. 'translate()'
-// exige que ambos strings tengan la MISMA longitud (80 = 80).
-const UNACCENT_FROM =
-  'áàâäãåāăąéèêëēėęíìîïīįóòôöõōőúùûüūűũñçýÿ' +
-  'ÁÀÂÄÃÅĀĂĄÉÈÊËĒĖĘÍÌÎÏĪĮÓÒÔÖÕŌŐÚÙÛÜŪŰŨÑÇÝŸ';
-const UNACCENT_TO =
-  'aaaaaaaaaeeeeeeeiiiiiiooooooouuuuuuuncyy' +
-  'AAAAAAAAAEEEEEEEIIIIIIOOOOOOOUUUUUUUNCYY';
-
-/** Same mapping as UNACCENT_FROM/UNACCENT_TO, but evaluated in PostgreSQL. */
-function sqlUnaccent(column: string): string {
-  return `translate(lower(${column}), '${UNACCENT_FROM}', '${UNACCENT_TO}')`;
-}
-
-/**
- * Normaliza un término como lo hace sqlUnaccent() en SQL: minúsculas sin
- * tildes, listo para comparar contra translate(lower(columna), ...).
- */
-function normalizeSearchTerm(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
 }
 
 @Injectable()
@@ -81,41 +56,19 @@ export class ResidentsService {
         { apartmentId },
       );
     }
-    if (query.search) {
-      const terms = normalizeSearchTerm(query.search)
-        .split(/\s+/)
-        .filter(Boolean);
-      if (terms.length > 0) {
-        // Cada palabra del texto busca en TODAS las columnas (nombre, apellido,
-        // documento, correo, teléfono y número de apartamento) y TODAS deben
-        // coincidir. Así "Oliver Andres", "Solano Diaz" o "Andres Solano"
-        // funcionan sin importar cómo se repartió el nombre en la base.
-        const conditions = terms
-          .map((term, i) => {
-            const p = `q${i}`;
-            return `(
-              ${sqlUnaccent('r.name')} ILIKE :${p}
-              OR ${sqlUnaccent('r.last_name')} ILIKE :${p}
-              OR ${sqlUnaccent('r.document')} ILIKE :${p}
-              OR ${sqlUnaccent('r.email')} ILIKE :${p}
-              OR ${sqlUnaccent('r.phone')} ILIKE :${p}
-              OR CONCAT(${sqlUnaccent('r.name')}, ' ', ${sqlUnaccent('r.last_name')}) ILIKE :${p}
-              OR ${sqlUnaccent('apartment.number')} ILIKE :${p}
-              OR EXISTS (
-                SELECT 1 FROM resident_apartments ra
-                JOIN apartments raa ON raa.id = ra.apartment_id
-                WHERE ra.resident_id = r.id
-                  AND ${sqlUnaccent('raa.number')} ILIKE :${p}
-              )
-            )`;
-          })
-          .join(' AND ');
-        const params = Object.fromEntries(
-          terms.map((term, i) => [`q${i}`, `%${term}%`]),
-        );
-        qb.andWhere(`(${conditions})`, params);
-      }
-    }
+    // Cada palabra busca en nombre, apellido, documento, correo, teléfono y
+    // número de apartamento (legacy o multi-apartamento); todas deben coincidir.
+    applyTokenSearch(
+      qb,
+      query.search,
+      ['r.name', 'r.last_name', 'r.document', 'r.email', 'r.phone', 'apartment.number'],
+      (p) => [`EXISTS (
+        SELECT 1 FROM resident_apartments ra
+        JOIN apartments raa ON raa.id = ra.apartment_id
+        WHERE ra.resident_id = r.id
+          AND ${sqlUnaccent('raa.number')} ILIKE :${p}
+      )`],
+    );
     if (query.typeId) {
       qb.andWhere('r.resident_type_id = :typeId', { typeId: query.typeId });
     }
@@ -407,18 +360,18 @@ export class ResidentsService {
    */
   async remove(id: string): Promise<void> {
     await this.findOne(id);
-    await this.repository.update(id, { isActive: false } as any);
+    await trackedUpdate(this.repository, id, { isActive: false });
   }
 
   async deactivate(id: string): Promise<Resident> {
     await this.findOne(id);
-    await this.repository.update(id, { isActive: false } as any);
+    await trackedUpdate(this.repository, id, { isActive: false });
     return this.findOne(id);
   }
 
   async activate(id: string): Promise<Resident> {
     await this.findOne(id);
-    await this.repository.update(id, { isActive: true } as any);
+    await trackedUpdate(this.repository, id, { isActive: true });
     return this.findOne(id);
   }
 
