@@ -104,6 +104,37 @@ export class ResidentsController {
     return this.service.createFamilyMember(user.sub, dto, photo?.path);
   }
 
+  @Patch('me/photo')
+  @UseGuards(ResidentGuard)
+  @UseInterceptors(
+    FileInterceptor('photo', {
+      storage: diskStorage({
+        destination: (req, file, cb) => {
+          const folder = 'uploads/residents/profile';
+          const fs = require('fs');
+          if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+          cb(null, folder);
+        },
+        filename: (req, file, cb) => {
+          const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extname(file.originalname)}`;
+          cb(null, unique);
+        },
+      }),
+      fileFilter: (req, file, cb) => {
+        if (!file.mimetype?.startsWith('image/')) {
+          cb(new BadRequestException('photo must be an image'), false);
+          return;
+        }
+        cb(null, true);
+      },
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  updateMyPhoto(@CurrentUser() user: JwtPayload, @UploadedFile() photo?: Express.Multer.File) {
+    if (!photo) throw new BadRequestException('photo is required');
+    return this.service.updatePhoto(user.sub, photo.path);
+  }
+
   @Get(':id')
   @UseGuards(OperationsEmployeeGuard)
   findOne(@Param('id') id: string) {

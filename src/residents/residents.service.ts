@@ -186,6 +186,14 @@ export class ResidentsService {
     return item;
   }
 
+  /** Lets a resident replace their own profile photo from the app. */
+  async updatePhoto(residentId: string, photoPath: string): Promise<Resident> {
+    const resident = await this.repository.findOne({ where: { id: residentId } });
+    if (!resident) throw new NotFoundException(`Resident #${residentId} not found`);
+    await this.repository.update(residentId, { photoPath });
+    return this.findOne(residentId);
+  }
+
   async getMyApartments(residentId: string): Promise<ResidentApartment[]> {
     return this.residentApartmentsRepository.find({
       where: { residentId },
