@@ -510,6 +510,22 @@ export class CallsPushService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // FCM accepts at most 500 tokens per multicast (news goes to everyone).
+    for (let start = 0; start < devices.length; start += 500) {
+      await this.sendUserNotificationBatch(messaging, devices.slice(start, start + 500), input);
+    }
+  }
+
+  private async sendUserNotificationBatch(
+    messaging: Messaging,
+    devices: CallDevice[],
+    input: {
+      notificationId: string;
+      title: string;
+      body: string;
+      notificationTypeCode?: string | null;
+    },
+  ) {
     const message: MulticastMessage = {
       tokens: devices.map((device) => device.token),
       notification: {

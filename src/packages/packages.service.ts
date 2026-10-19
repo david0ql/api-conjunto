@@ -11,6 +11,7 @@ import { periodToStartDate } from '../common/utils/period-filter';
 import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
 import { Resident } from '../residents/entities/resident.entity';
 import { applyTokenSearch } from '../common/utils/search';
+import { ResidentPushService } from '../resident-push/resident-push.service';
 
 interface PackageFilters extends PaginationQueryDto {
   search?: string;
@@ -31,6 +32,7 @@ export class PackagesService {
     private residentApartmentsRepository: Repository<ResidentApartment>,
     @InjectRepository(Resident)
     private residentsRepository: Repository<Resident>,
+    private readonly residentPush: ResidentPushService,
   ) {}
 
   async findAll(query: PackageFilters = {}): Promise<PaginatedResponse<Package>> {
@@ -132,7 +134,22 @@ export class PackagesService {
       );
     }
 
-    return this.findOne(saved.id);
+    const created = await this.findOne(saved.id);
+    this.notifyArrival(created);
+    return created;
+  }
+
+  /** Tells everyone in the apartment (not only the addressee) that a package is waiting. */
+  private notifyArrival(pkg: Package) {
+    const tower = pkg.apartment?.towerData?.name ? `${pkg.apartment.towerData.name} · ` : '';
+    const apartment = pkg.apartment ? ` para ${tower}Apto ${pkg.apartment.number}` : '';
+    const description = pkg.description?.trim() ? `: ${pkg.description.trim()}` : '';
+    this.residentPush.notifyApartment(pkg.apartmentId, {
+      referenceId: pkg.id,
+      title: 'Llegó un paquete',
+      body: `Tienes un paquete en portería${apartment}${description}`,
+      notificationTypeCode: 'package_arrived',
+    });
   }
 
   async update(id: string, dto: UpdatePackageDto): Promise<Package> {

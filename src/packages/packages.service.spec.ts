@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { PackagesService } from './packages.service';
 import { Package } from './entities/package.entity';
 import { PackagePhoto } from './entities/package-photo.entity';
+import { ResidentPushService } from '../resident-push/resident-push.service';
 
 const mockQb = (items: unknown[], total: number) => {
   const qb: Record<string, jest.Mock> = {};
@@ -35,6 +36,7 @@ describe('PackagesService.findAll', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         PackagesService,
+        { provide: ResidentPushService, useValue: { notifyApartment: jest.fn(), notifyAllResidents: jest.fn(), describeApartment: jest.fn() } },
         { provide: getRepositoryToken(Package), useValue: repo },
         { provide: getRepositoryToken(PackagePhoto), useValue: makeRepo([]) },
       ],

@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AccessAuditService } from './access-audit.service';
 import { AccessAudit } from './entities/access-audit.entity';
+import { ResidentPushService } from '../resident-push/resident-push.service';
 
 const makeRepo = (items: unknown[], total?: number) => ({
   findAndCount: jest.fn().mockResolvedValue([items, total ?? items.length]),
@@ -23,6 +24,7 @@ describe('AccessAuditService.findAll', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         AccessAuditService,
+        { provide: ResidentPushService, useValue: { notifyApartment: jest.fn(), notifyAllResidents: jest.fn(), describeApartment: jest.fn() } },
         { provide: getRepositoryToken(AccessAudit), useValue: repo },
       ],
     }).compile();

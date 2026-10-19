@@ -7,12 +7,14 @@ import { UpdateNewsDto } from './dto/update-news.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { applyTokenSearch } from '../common/utils/search';
+import { ResidentPushService } from '../resident-push/resident-push.service';
 
 @Injectable()
 export class NewsService {
   constructor(
     @InjectRepository(News)
     private repository: Repository<News>,
+    private readonly residentPush: ResidentPushService,
   ) {}
 
   async findAll(query: PaginationQueryDto = {}): Promise<PaginatedResponse<News>> {
@@ -48,7 +50,20 @@ export class NewsService {
   async create(dto: CreateNewsDto): Promise<News> {
     const item = this.repository.create(dto);
     const saved = await this.repository.save(item);
-    return this.findOne(saved.id);
+    const created = await this.findOne(saved.id);
+    this.notifyPublished(created);
+    return created;
+  }
+
+  /** News goes to every resident with the app installed. */
+  private notifyPublished(news: News) {
+    const content = news.content.replace(/\s+/g, ' ').trim();
+    this.residentPush.notifyAllResidents({
+      referenceId: news.id,
+      title: news.category?.name ? `${news.category.name}: ${news.title}` : news.title,
+      body: content.length > 140 ? `${content.slice(0, 139).trimEnd()}…` : content,
+      notificationTypeCode: 'news_published',
+    });
   }
 
   async update(id: string, dto: UpdateNewsDto): Promise<News> {

@@ -12,6 +12,7 @@ import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dt
 import { periodToStartDate } from '../common/utils/period-filter';
 import { normalizePlate } from '../common/utils/normalize-plate';
 import { applyTokenSearch } from '../common/utils/search';
+import { ResidentPushService } from '../resident-push/resident-push.service';
 
 interface AccessFilters extends PaginationQueryDto {
   search?: string;
@@ -66,6 +67,7 @@ export class AccessAuditService {
     private residentVehiclesRepository: Repository<ResidentVehicle>,
     @InjectRepository(Visitor)
     private visitorsRepository: Repository<Visitor>,
+    private readonly residentPush: ResidentPushService,
   ) {}
 
   async findAll(query: AccessFilters = {}): Promise<PaginatedResponse<AccessAudit>> {
@@ -294,7 +296,22 @@ export class AccessAuditService {
       await this.visitorsRepository.save(visitor);
     }
 
+    if (visitor) void this.notifyVisit(saved, visitor);
     return saved;
+  }
+
+  /** Tells everyone in the destination apartment that their visitor came in. */
+  private async notifyVisit(access: AccessAudit, visitor: Visitor) {
+    if (!access.apartmentId) return;
+    const apartment = await this.residentPush.describeApartment(access.apartmentId).catch(() => null);
+    const isDelivery = access.visitorCategory === 'domiciliario';
+    const name = `${visitor.name} ${visitor.lastName}`.trim();
+    this.residentPush.notifyApartment(access.apartmentId, {
+      referenceId: access.id,
+      title: isDelivery ? 'Llegó un domiciliario' : 'Llegó una visita',
+      body: `${name} ingresó al conjunto${apartment ? ` con destino a ${apartment}` : ''}`,
+      notificationTypeCode: isDelivery ? 'delivery_arrived' : 'visitor_arrived',
+    });
   }
 
   async update(id: string, dto: UpdateAccessAuditDto): Promise<AccessAudit> {

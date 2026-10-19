@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NewsService } from './news.service';
 import { News } from './entities/news.entity';
+import { ResidentPushService } from '../resident-push/resident-push.service';
 
 const mockQb = (items: unknown[], total: number) => ({
   leftJoinAndSelect: jest.fn().mockReturnThis(),
@@ -34,6 +35,7 @@ describe('NewsService.findAll', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         NewsService,
+        { provide: ResidentPushService, useValue: { notifyApartment: jest.fn(), notifyAllResidents: jest.fn(), describeApartment: jest.fn() } },
         { provide: getRepositoryToken(News), useValue: repo },
       ],
     }).compile();
