@@ -6,9 +6,10 @@ import { Resident } from './entities/resident.entity';
 import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
 import { ResidentType } from '../resident-types/entities/resident-type.entity';
 import { ResidentVehicle } from '../resident-vehicles/entities/resident-vehicle.entity';
+import { Visitor } from '../visitors/entities/visitor.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Resident, ResidentApartment, ResidentType, ResidentVehicle])],
+  imports: [TypeOrmModule.forFeature([Resident, ResidentApartment, ResidentType, ResidentVehicle, Visitor])],
   controllers: [ResidentsController],
   providers: [ResidentsService],
   exports: [ResidentsService],

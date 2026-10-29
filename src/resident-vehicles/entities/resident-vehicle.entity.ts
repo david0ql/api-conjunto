@@ -49,6 +49,14 @@ export class ResidentVehicle {
   @Column({ name: 'created_by_employee_id', type: 'uuid', nullable: true })
   createdByEmployeeId: string | null;
 
+  /**
+   * false = la placa ya no es de residente (p. ej. era de una visita y quedó
+   * mal registrada): portería deja de reconocerla como del apartamento, pero el
+   * registro no se borra y se puede volver a activar.
+   */
+  @Column({ name: 'is_active', default: true })
+  isActive: boolean;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }

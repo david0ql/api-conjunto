@@ -117,6 +117,10 @@ const TRACKED = new Map<EntityClass, TrackedEntity>([
         model: { label: 'Modelo' },
         color: { label: 'Color' },
         notes: { label: 'Notas' },
+        isActive: {
+          label: 'Estado',
+          format: yesNo('De residente', 'Pasado a visitante'),
+        },
       },
     },
   ],
@@ -304,6 +308,24 @@ export async function recordEntityChange(
       action,
       changes,
     });
+  } catch (error) {
+    logger.warn(
+      `No fue posible registrar el cambio: ${(error as Error).message}`,
+    );
+  }
+}
+
+/**
+ * Registra un evento que no es un cambio de columna (p. ej. "este visitante
+ * pasó a ser residente"), con el mismo quién/cuándo/motivo de la petición.
+ * Nunca lanza.
+ */
+export async function recordCustomChange(
+  manager: EntityManager,
+  entry: Pick<ChangeLog, 'entityType' | 'entityId' | 'entityLabel' | 'changes'>,
+): Promise<void> {
+  try {
+    await save(manager, { ...entry, action: 'updated' });
   } catch (error) {
     logger.warn(
       `No fue posible registrar el cambio: ${(error as Error).message}`,

@@ -51,7 +51,7 @@ export class ResidentVehiclesService {
 
   async findByApartment(apartmentId: string): Promise<ResidentVehicle[]> {
     return this.repository.find({
-      where: { apartmentId },
+      where: { apartmentId, isActive: true },
       relations: ['vehicleBrand', 'createdByEmployee'],
       order: { createdAt: 'DESC' },
     });
@@ -105,6 +105,15 @@ export class ResidentVehiclesService {
 
     const existing = await qb.getOne();
     if (!existing) return;
+
+    if (!existing.isActive) {
+      const tower = existing.apartment?.towerData?.name;
+      const number = existing.apartment?.number;
+      const was = number ? ` (antes de ${tower ? `${tower} · ` : ''}Apt. ${number})` : '';
+      throw new ConflictException(
+        `La placa ${normalized} está registrada como pasada a visitante${was}. Búsquela en Vehículos y vuelva a activarla en el apartamento correcto.`,
+      );
+    }
 
     if (existing.apartmentId === apartmentId) {
       throw new ConflictException(
@@ -167,6 +176,32 @@ export class ResidentVehiclesService {
 
     setChangeReason(reason);
     await trackedUpdate(this.repository, id, { apartmentId });
+    return this.findOne(id);
+  }
+
+  /**
+   * La placa deja de ser de residente (era de una visita): portería ya no la
+   * reconoce como del apartamento y la registra como visita. No se borra nada;
+   * queda en el historial con motivo y se puede volver a activar.
+   */
+  async convertToVisitor(id: string, reason: string): Promise<ResidentVehicle> {
+    const item = await this.findOne(id);
+    if (!item.isActive) throw new BadRequestException('La placa ya está como visitante');
+    setChangeReason(reason);
+    await trackedUpdate(this.repository, id, { isActive: false });
+    return this.findOne(id);
+  }
+
+  /** Vuelve a ser vehículo de residente, en el mismo apartamento o en otro. */
+  async reactivate(id: string, reason: string, apartmentId?: string): Promise<ResidentVehicle> {
+    const item = await this.findOne(id);
+    if (item.isActive) throw new BadRequestException('La placa ya es de residente');
+    if (apartmentId && apartmentId !== item.apartmentId) {
+      const apartmentExists = await this.repository.manager.exists(Apartment, { where: { id: apartmentId } });
+      if (!apartmentExists) throw new NotFoundException('Apartamento no encontrado');
+    }
+    setChangeReason(reason);
+    await trackedUpdate(this.repository, id, { isActive: true, apartmentId: apartmentId ?? item.apartmentId });
     return this.findOne(id);
   }
 

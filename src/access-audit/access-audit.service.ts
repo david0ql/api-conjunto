@@ -173,6 +173,8 @@ export class AccessAuditService {
       .leftJoinAndSelect('apartment.towerData', 'towerData')
       .leftJoinAndSelect('rv.vehicleBrand', 'vehicleBrand')
       .where("REPLACE(UPPER(rv.plate), ' ', '') = :bare", { bare })
+      // Una placa pasada a visitante ya no identifica al apartamento.
+      .andWhere('rv.is_active = true')
       .getOne();
   }
 

@@ -21,6 +21,7 @@ import { Apartment } from '../apartments/entities/apartment.entity';
 import { ResidentType } from '../resident-types/entities/resident-type.entity';
 import { MailService } from '../mail/mail.service';
 import { trackedUpdate } from '../change-history/change-recorder';
+import { getChangeContext, setChangeReason } from '../change-history/change-context';
 
 export type ApprovalMode = 'replace' | 'merge';
 
@@ -73,6 +74,29 @@ export class ResidentRegistrationsService {
     private residentTypesRepo: Repository<ResidentType>,
     private readonly mailService: MailService,
   ) {}
+
+  /**
+   * Antes el correo se descartaba en silencio si ya lo tenía otro residente,
+   * aunque ese residente estuviera inhabilitado (p. ej. el ocupante anterior que
+   * acaba de reemplazarse). Si el dueño actual está inactivo, se le quita el
+   * correo (queda en su historial) para que el aprobado pueda usarlo. Devuelve
+   * false si lo tiene un residente activo: ahí sí se descarta.
+   */
+  private async claimEmail(email: string, forResidentId: string | null, forName: string): Promise<boolean> {
+    const holder = await this.residentsRepo
+      .createQueryBuilder('r')
+      .where('LOWER(TRIM(r.email)) = LOWER(TRIM(:email))', { email })
+      .andWhere(forResidentId ? 'r.id <> :forResidentId' : 'TRUE', { forResidentId })
+      .orderBy('r.is_active', 'DESC')
+      .getOne();
+    if (!holder) return true;
+    if (holder.isActive) return false;
+    const previousReason = getChangeContext()?.reason;
+    setChangeReason(`Correo pasado a ${forName} al aprobar su registro (estaba en ${holder.name} ${holder.lastName}, inactivo)`);
+    await trackedUpdate(this.residentsRepo, holder.id, { email: null as unknown as string });
+    setChangeReason(previousReason);
+    return true;
+  }
 
   private apartmentLabel(request: RegistrationRequest): string | undefined {
     const apt = (request as any).apartment;
@@ -332,7 +356,7 @@ export class ResidentRegistrationsService {
 
     // Vehicles currently registered to the apartment
     const currentVehicles = await this.residentVehiclesRepo.find({
-      where: { apartmentId: request.apartmentId },
+      where: { apartmentId: request.apartmentId, isActive: true },
       relations: ['vehicleBrand'],
       order: { createdAt: 'ASC' },
     });
@@ -481,6 +505,10 @@ export class ResidentRegistrationsService {
           if (!existing.email && person.email?.trim()) updateData.email = person.email.trim();
           if (!existing.birthDate && person.birthDate?.trim()) updateData.birthDate = person.birthDate;
         }
+        if (updateData.email && !(await this.claimEmail(updateData.email, residentId, `${person.name} ${person.lastName}`.trim()))) {
+          delete updateData.email;
+          emailDropped = true;
+        }
         // A person present in the submission is a confirmed occupant → keep their account enabled
         updateData.isActive = true;
         if (Object.keys(updateData).length) {
@@ -507,9 +535,12 @@ export class ResidentRegistrationsService {
           isActive: true,
         };
         let savedResident: any;
+        if (person.email?.trim() && !(await this.claimEmail(person.email, null, `${person.name} ${person.lastName}`.trim()))) {
+          emailDropped = true;
+        }
         try {
           savedResident = await this.residentsRepo.save(
-            this.residentsRepo.create({ ...baseData, email: person.email || undefined } as any),
+            this.residentsRepo.create({ ...baseData, email: emailDropped ? undefined : person.email || undefined } as any),
           );
         } catch {
           // The email is already used by another resident (e.g. a shared family email):

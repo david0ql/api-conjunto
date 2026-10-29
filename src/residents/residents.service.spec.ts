@@ -3,11 +3,15 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { ResidentsService } from './residents.service';
 import { Resident } from './entities/resident.entity';
 import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
+import { ResidentType } from '../resident-types/entities/resident-type.entity';
+import { ResidentVehicle } from '../resident-vehicles/entities/resident-vehicle.entity';
+import { MailService } from '../mail/mail.service';
 
 const mockQb = (items: unknown[], total: number) => {
   const qb: Record<string, jest.Mock> = {
     leftJoinAndSelect: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     skip: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
@@ -30,7 +34,7 @@ const makeRepo = (items: unknown[], total?: number) => ({
   create: jest.fn(),
   save: jest.fn(),
   remove: jest.fn(),
-  query: jest.fn(),
+  query: jest.fn().mockResolvedValue([]),
   update: jest.fn(),
   createQueryBuilder: jest.fn().mockReturnValue(mockQb(items, total ?? items.length)),
 });
@@ -48,6 +52,9 @@ describe('ResidentsService.findAll', () => {
         ResidentsService,
         { provide: getRepositoryToken(Resident), useValue: repo },
         { provide: getRepositoryToken(ResidentApartment), useValue: makeRepo([]) },
+        { provide: getRepositoryToken(ResidentType), useValue: makeRepo([]) },
+        { provide: getRepositoryToken(ResidentVehicle), useValue: makeRepo([]) },
+        { provide: MailService, useValue: {} },
       ],
     }).compile();
     service = moduleRef.get(ResidentsService);
@@ -77,6 +84,6 @@ describe('ResidentsService.findAll', () => {
   it('filters by apartmentId when provided', async () => {
     await service.findAll('apt-123', { page: 1, limit: 15 });
     const qb = repo.createQueryBuilder.mock.results[0].value;
-    expect(qb.where).toHaveBeenCalledWith('r.apartment_id = :apartmentId', { apartmentId: 'apt-123' });
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('r.apartment_id = :apartmentId'), { apartmentId: 'apt-123' });
   });
 });

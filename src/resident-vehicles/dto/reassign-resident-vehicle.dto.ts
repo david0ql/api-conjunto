@@ -17,3 +17,16 @@ export class ReassignResidentVehicleDto {
   @MaxLength(500)
   reason?: string;
 }
+
+/** Pasar la placa a visitante o volverla de residente: el motivo es obligatorio. */
+export class ChangeVehicleStatusDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  reason: string;
+
+  /** Solo al volverla de residente: si va a otro apartamento. */
+  @IsUUID()
+  @IsOptional()
+  apartmentId?: string;
+}

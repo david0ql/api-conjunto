@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, EntityManager } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import * as QRCode from 'qrcode';
@@ -8,14 +8,18 @@ import { Resident } from './entities/resident.entity';
 import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
 import { CreateFamilyMemberDto } from './dto/create-family-member.dto';
+import { ResidentFromVisitorDto } from './dto/resident-from-visitor.dto';
 import { ResidentApartment } from '../resident-apartments/entities/resident-apartment.entity';
 import { ResidentType } from '../resident-types/entities/resident-type.entity';
 import { ResidentVehicle } from '../resident-vehicles/entities/resident-vehicle.entity';
+import { Visitor } from '../visitors/entities/visitor.entity';
+import { MailService } from '../mail/mail.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse, paginate } from '../common/dto/paginated-response.dto';
 import { periodToStartDate } from '../common/utils/period-filter';
 import { applyTokenSearch, sqlUnaccent } from '../common/utils/search';
-import { trackedUpdate } from '../change-history/change-recorder';
+import { recordCustomChange, trackedUpdate } from '../change-history/change-recorder';
+import { getChangeContext, setChangeReason } from '../change-history/change-context';
 
 interface ResidentFilters extends PaginationQueryDto {
   search?: string;
@@ -23,6 +27,32 @@ interface ResidentFilters extends PaginationQueryDto {
   isActive?: string;
   hasApartment?: string;
   towerId?: string;
+}
+
+/** Residente que ya tiene el correo o la cédula que se quiere usar. */
+export interface ResidentConflict {
+  id: string;
+  name: string;
+  lastName: string;
+  document: string;
+  email: string | null;
+  isActive: boolean;
+  /** "Torre 9 · Apt. 569, Torre 2 · Apt. 101" o null si no tiene. */
+  apartments: string | null;
+}
+
+/** Última inhabilitación de un residente inactivo, sacada del historial de cambios. */
+export interface ResidentDeactivation {
+  at: Date;
+  by: string | null;
+  reason: string | null;
+}
+
+const fullName = (r: { name?: string | null; lastName?: string | null }) =>
+  [r.name, r.lastName].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+
+function generatePassword(): string {
+  return crypto.randomBytes(4).toString('hex');
 }
 
 @Injectable()
@@ -36,6 +66,7 @@ export class ResidentsService {
     private residentTypesRepository: Repository<ResidentType>,
     @InjectRepository(ResidentVehicle)
     private residentVehiclesRepository: Repository<ResidentVehicle>,
+    private mailService: MailService,
   ) {}
 
   async findAll(apartmentId?: string, query: ResidentFilters = {}): Promise<PaginatedResponse<Resident>> {
@@ -77,7 +108,10 @@ export class ResidentsService {
     // app awaiting admin activation (is_active=false, type=family) must appear
     // by default so the admin can approve them. isActive=pending isolates only
     // those pending family members; isActive=false / all behave as before.
-    if (query.isActive === undefined || query.isActive === '') {
+    // Al buscar por texto sin filtro de estado salen también los inactivos,
+    // para que se puedan encontrar y volver a habilitar.
+    const searching = Boolean(query.search?.trim());
+    if ((query.isActive === undefined || query.isActive === '') && !searching) {
       qb.andWhere(
         "(r.is_active = true OR (r.is_active = false AND residentType.code = 'family'))",
       );
@@ -85,7 +119,7 @@ export class ResidentsService {
       qb.andWhere(
         "(r.is_active = false AND residentType.code = 'family')",
       );
-    } else if (query.isActive !== 'all') {
+    } else if (query.isActive && query.isActive !== 'all') {
       qb.andWhere('r.is_active = :isActive', { isActive: query.isActive === 'true' });
     }
     if (query.hasApartment === 'yes') {
@@ -107,7 +141,124 @@ export class ResidentsService {
       .getManyAndCount();
     await this.attachApartments(data);
     await this.attachPhotos(data);
+    await this.attachDeactivations(data);
     return paginate(data, total, page, limit);
+  }
+
+  /**
+   * A cada residente inactivo le adjunta cuándo, quién y por qué se inhabilitó
+   * (último cambio a "Inactivo" en el historial). Los inactivados antes de que
+   * existiera el historial quedan sin este dato.
+   */
+  private async attachDeactivations(residents: Resident[]): Promise<void> {
+    const inactive = residents.filter((r) => !r.isActive);
+    if (inactive.length === 0) return;
+    const rows: { entity_id: string; created_at: Date; actor_name: string | null; reason: string | null }[] =
+      await this.repository.query(
+        `SELECT DISTINCT ON (entity_id) entity_id, created_at, actor_name, reason
+           FROM change_logs
+          WHERE entity_type = 'resident'
+            AND entity_id = ANY($1)
+            AND changes @> '[{"field": "isActive", "to": "Inactivo"}]'::jsonb
+          ORDER BY entity_id, created_at DESC`,
+        [inactive.map((r) => r.id)],
+      );
+    const byResident = new Map(rows.map((row) => [row.entity_id, row]));
+    for (const r of inactive) {
+      const row = byResident.get(r.id);
+      (r as any).deactivation = row
+        ? ({ at: row.created_at, by: row.actor_name, reason: row.reason } satisfies ResidentDeactivation)
+        : null;
+    }
+  }
+
+  /**
+   * Busca otro residente que ya use ese correo (sin importar mayúsculas, como
+   * el login) o esa cédula. Incluye inactivos: la restricción única de la BD
+   * también los cuenta.
+   */
+  private async findConflict(
+    manager: EntityManager,
+    field: 'email' | 'document',
+    value: string,
+    excludeId?: string,
+  ): Promise<ResidentConflict | null> {
+    const column = field === 'email' ? 'LOWER(TRIM(r.email)) = LOWER(TRIM($1))' : 'TRIM(r.document) = TRIM($1)';
+    const rows: Array<Omit<ResidentConflict, 'lastName' | 'isActive'> & { last_name: string; is_active: boolean }> =
+      await manager.query(
+        `SELECT r.id, r.name, r.last_name, r.document, r.email, r.is_active,
+                (SELECT string_agg(CONCAT_WS(' · ', t.name, 'Apt. ' || a.number), ', ' ORDER BY t.name, a.number)
+                   FROM apartments a LEFT JOIN towers t ON t.id = a.tower_id
+                  WHERE a.id = r.apartment_id
+                     OR a.id IN (SELECT ra.apartment_id FROM resident_apartments ra WHERE ra.resident_id = r.id)
+                ) AS apartments
+           FROM residents r
+          WHERE ${column} AND ($2::uuid IS NULL OR r.id <> $2::uuid)
+          ORDER BY r.is_active DESC
+          LIMIT 1`,
+        [value, excludeId ?? null],
+      );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      lastName: row.last_name,
+      document: row.document,
+      email: row.email,
+      isActive: row.is_active,
+      apartments: row.apartments,
+    };
+  }
+
+  /** 409 que dice quién tiene el dato, para que la web lo muestre tal cual. */
+  private conflictError(field: 'email' | 'document', value: string, conflict: ResidentConflict): ConflictException {
+    const who = [
+      fullName(conflict),
+      `(${[conflict.apartments ?? 'sin apartamento', conflict.isActive ? null : 'inactivo'].filter(Boolean).join(', ')})`,
+    ].join(' ');
+    const message =
+      field === 'email'
+        ? `El correo ${value.trim()} ya lo tiene ${who}.`
+        : `La cédula ${value.trim()} ya está registrada a ${who}.`;
+    return new ConflictException({
+      statusCode: 409,
+      error: 'Conflict',
+      code: field === 'email' ? 'EMAIL_IN_USE' : 'DOCUMENT_IN_USE',
+      field,
+      message,
+      conflict,
+    });
+  }
+
+  /**
+   * Valida que el correo y la cédula no los tenga otro residente. Si el correo
+   * lo tiene un residente inactivo y se pidió explícitamente, se le quita a él
+   * (queda en su historial con el motivo) para poder usarlo aquí.
+   */
+  private async ensureAvailable(
+    manager: EntityManager,
+    values: { email?: string | null; document?: string | null },
+    options: { excludeId?: string; takeEmailFromInactive?: boolean; newOwnerName: string },
+  ): Promise<void> {
+    if (values.document?.trim()) {
+      const conflict = await this.findConflict(manager, 'document', values.document, options.excludeId);
+      if (conflict) throw this.conflictError('document', values.document, conflict);
+    }
+    if (values.email?.trim()) {
+      const conflict = await this.findConflict(manager, 'email', values.email, options.excludeId);
+      if (!conflict) return;
+      if (conflict.isActive || !options.takeEmailFromInactive) {
+        throw this.conflictError('email', values.email, conflict);
+      }
+      const previousReason = getChangeContext()?.reason;
+      setChangeReason(
+        [`Correo pasado a ${options.newOwnerName} (estaba en ${fullName(conflict)}, inactivo)`, previousReason]
+          .filter(Boolean)
+          .join(' · '),
+      );
+      await trackedUpdate(manager.getRepository(Resident), conflict.id, { email: null as unknown as string });
+    }
   }
 
   /**
@@ -183,6 +334,7 @@ export class ResidentsService {
     if (!item) throw new NotFoundException(`Resident #${id} not found`);
     await this.attachApartments([item]);
     await this.attachPhotos([item]);
+    await this.attachDeactivations([item]);
     return item;
   }
 
@@ -265,6 +417,7 @@ export class ResidentsService {
       throw new BadRequestException('You must have an apartment assigned before adding family members');
     }
 
+    // Lo llama el residente desde la app: no se revela quién tiene el dato.
     const existing = await this.repository.findOne({
       where: [{ document: dto.document }, ...(dto.email ? [{ email: dto.email }] : [])],
     });
@@ -331,17 +484,14 @@ export class ResidentsService {
     const apartmentIds = await this.getApartmentIds(residentId);
     if (apartmentIds.length === 0) return [];
     return this.residentVehiclesRepository.find({
-      where: { apartmentId: In(apartmentIds) },
+      where: { apartmentId: In(apartmentIds), isActive: true },
       relations: ['vehicleBrand'],
       order: { createdAt: 'DESC' },
     });
   }
 
   async create(dto: CreateResidentDto): Promise<Resident> {
-    const existing = await this.repository.findOne({
-      where: [{ email: dto.email }, { document: dto.document }],
-    });
-    if (existing) throw new ConflictException('Email or document already in use');
+    await this.ensureAvailable(this.repository.manager, dto, { newOwnerName: fullName(dto) });
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const { password, ...rest } = dto;
     const item = this.repository.create({ ...rest, passwordHash });
@@ -349,14 +499,173 @@ export class ResidentsService {
   }
 
   async update(id: string, dto: UpdateResidentDto): Promise<Resident> {
-    const item = await this.findOne(id);
-    const data = dto as any;
-    if (data.password) {
-      (item as any).passwordHash = await bcrypt.hash(data.password, 10);
-    }
-    const { password: _pw, ...rest } = data;
-    Object.assign(item, rest);
-    return this.repository.save(item);
+    const { password, takeEmailFromInactive, ...rest } = dto;
+    await this.repository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(Resident);
+      const item = await repo.findOne({ where: { id } });
+      if (!item) throw new NotFoundException(`Resident #${id} not found`);
+      // Solo se valida lo que cambia: no bloquear la edición por datos viejos.
+      const emailChanged = rest.email !== undefined && rest.email?.trim().toLowerCase() !== item.email?.trim().toLowerCase();
+      const documentChanged = rest.document !== undefined && rest.document?.trim() !== item.document?.trim();
+      await this.ensureAvailable(
+        manager,
+        { email: emailChanged ? rest.email : null, document: documentChanged ? rest.document : null },
+        { excludeId: id, takeEmailFromInactive, newOwnerName: fullName({ ...item, ...rest }) },
+      );
+      if (password) {
+        (item as any).passwordHash = await bcrypt.hash(password, 10);
+      }
+      Object.assign(item, rest);
+      await repo.save(item);
+    });
+    return this.findOne(id);
+  }
+
+  /**
+   * Registra como residente a alguien que estaba como visitante (vino a ver un
+   * apartamento y se mudó, o un familiar que ahora vive aquí). El visitante no
+   * se borra: sus ingresos siguen en el historial. Si la cédula ya era de un
+   * residente inactivo, se reactiva ese mismo registro en vez de duplicarlo.
+   */
+  async createFromVisitor(
+    visitorId: string,
+    dto: ResidentFromVisitorDto,
+  ): Promise<{ resident: Resident; generatedPassword: string; emailSent: boolean; reactivated: boolean }> {
+    const generatedPassword = generatePassword();
+    const passwordHash = await bcrypt.hash(generatedPassword, 10);
+    setChangeReason(`Registrado desde visitante: ${dto.reason.trim()}`);
+
+    const { residentId, email, reactivated, apartmentLabel } = await this.repository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(Resident);
+      const visitor = await manager.findOne(Visitor, { where: { id: visitorId } });
+      if (!visitor) throw new NotFoundException(`Visitor #${visitorId} not found`);
+
+      const document = (dto.document ?? visitor.document)?.trim();
+      if (!document) {
+        throw new BadRequestException('El visitante no tiene cédula registrada; escríbala para registrarlo como residente');
+      }
+      const type = await manager.findOne(ResidentType, { where: { id: dto.residentTypeId } });
+      if (!type) throw new BadRequestException('Tipo de residente no válido');
+      const [apartment]: { label: string }[] = await manager.query(
+        `SELECT CONCAT_WS(' · ', t.name, 'Apt. ' || a.number) AS label
+           FROM apartments a LEFT JOIN towers t ON t.id = a.tower_id WHERE a.id = $1`,
+        [dto.apartmentId],
+      );
+      if (!apartment) throw new BadRequestException('Apartamento no válido');
+
+      const existing = await repo.findOne({ where: { document } });
+      if (existing?.isActive) {
+        const conflict = await this.findConflict(manager, 'document', document);
+        throw this.conflictError('document', document, conflict!);
+      }
+      const name = existing ? fullName(existing) : fullName(visitor);
+      const email = dto.email?.trim() || null;
+      await this.ensureAvailable(
+        manager,
+        { email },
+        { excludeId: existing?.id, takeEmailFromInactive: dto.takeEmailFromInactive, newOwnerName: name },
+      );
+      const phone = dto.phone?.trim() || visitor.phone?.trim() || null;
+
+      let id: string;
+      if (existing) {
+        id = existing.id;
+        await trackedUpdate(repo, id, {
+          isActive: true,
+          residentTypeId: type.id,
+          passwordHash,
+          ...(phone ? { phone } : {}),
+          ...(email ? { email } : {}),
+          ...(!existing.photoPath && visitor.photoPath ? { photoPath: visitor.photoPath } : {}),
+        });
+      } else {
+        const saved = await repo.save(
+          repo.create({
+            name: visitor.name.trim(),
+            lastName: visitor.lastName.trim(),
+            document,
+            phone: phone ?? undefined,
+            email: email ?? undefined,
+            photoPath: visitor.photoPath ?? undefined,
+            passwordHash,
+            residentTypeId: type.id,
+            isActive: true,
+          }),
+        );
+        id = saved.id;
+      }
+
+      await trackedUpdate(repo, id, { apartmentId: dto.apartmentId });
+      const links = manager.getRepository(ResidentApartment);
+      if (!(await links.findOne({ where: { residentId: id, apartmentId: dto.apartmentId } }))) {
+        await links.save(links.create({ residentId: id, apartmentId: dto.apartmentId }));
+      }
+
+      await recordCustomChange(manager, {
+        entityType: 'visitor',
+        entityId: visitor.id,
+        entityLabel: fullName(visitor),
+        changes: [
+          { field: 'residentId', label: 'Registrado como residente', from: null, to: `${name} · ${apartment.label}`, kind: 'text' },
+        ],
+      });
+      return { residentId: id, email: email ?? existing?.email ?? null, reactivated: Boolean(existing), apartmentLabel: apartment.label };
+    });
+
+    const resident = await this.findOne(residentId);
+    const emailSent = email
+      ? await this.mailService.sendResidentCredentials(email, {
+          name: fullName(resident),
+          loginEmail: email,
+          password: generatedPassword,
+          apartmentLabel,
+        })
+      : false;
+    return { resident, generatedPassword, emailSent, reactivated };
+  }
+
+  /**
+   * Pasa un residente a visitante (p. ej. un familiar que en realidad no vive
+   * aquí): se inhabilita como residente, sin borrar nada, y queda un visitante
+   * con sus datos para que portería lo registre en cada ingreso. Si ya existía
+   * un visitante con esa cédula se reutiliza.
+   */
+  async convertToVisitor(id: string, reason: string): Promise<{ resident: Resident; visitor: Visitor }> {
+    setChangeReason(`Pasado a visitante: ${reason.trim()}`);
+    const visitorId = await this.repository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(Resident);
+      const resident = await repo.findOne({ where: { id } });
+      if (!resident) throw new NotFoundException(`Resident #${id} not found`);
+
+      const visitors = manager.getRepository(Visitor);
+      let visitor = await visitors.findOne({ where: { document: resident.document.trim() } });
+      if (!visitor) {
+        visitor = await visitors.save(
+          visitors.create({
+            name: resident.name.trim(),
+            lastName: resident.lastName.trim(),
+            document: resident.document.trim(),
+            phone: resident.phone,
+            photoPath: resident.photoPath ?? null,
+            photoUpdatedAt: resident.photoPath ? new Date() : null,
+          }),
+        );
+      }
+      if (resident.isActive) {
+        await trackedUpdate(repo, id, { isActive: false });
+      }
+      await recordCustomChange(manager, {
+        entityType: 'resident',
+        entityId: id,
+        entityLabel: fullName(resident),
+        changes: [
+          { field: 'visitorId', label: 'Registrado como visitante', from: null, to: `${fullName(visitor)} · CC ${visitor.document}`, kind: 'text' },
+        ],
+      });
+      return visitor.id;
+    });
+    const visitor = await this.repository.manager.findOneOrFail(Visitor, { where: { id: visitorId } });
+    return { resident: await this.findOne(id), visitor };
   }
 
   /**
@@ -371,14 +680,17 @@ export class ResidentsService {
     await trackedUpdate(this.repository, id, { isActive: false });
   }
 
-  async deactivate(id: string): Promise<Resident> {
+  async deactivate(id: string, reason?: string): Promise<Resident> {
     await this.findOne(id);
+    setChangeReason(reason);
     await trackedUpdate(this.repository, id, { isActive: false });
     return this.findOne(id);
   }
 
-  async activate(id: string): Promise<Resident> {
+  /** Vuelve a habilitar un residente (p. ej. si se inhabilitó por error). */
+  async activate(id: string, reason?: string): Promise<Resident> {
     await this.findOne(id);
+    setChangeReason(reason);
     await trackedUpdate(this.repository, id, { isActive: true });
     return this.findOne(id);
   }

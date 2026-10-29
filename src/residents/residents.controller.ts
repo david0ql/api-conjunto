@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, UseInterceptors, UploadedFile, BadRequestException, ParseUUIDPipe } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -13,6 +13,9 @@ import { ResidentsService } from './residents.service';
 import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
 import { CreateFamilyMemberDto } from './dto/create-family-member.dto';
+import { ChangeStatusDto } from './dto/change-status.dto';
+import { ResidentFromVisitorDto } from './dto/resident-from-visitor.dto';
+import { ResidentToVisitorDto } from './dto/resident-to-visitor.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('residents')
@@ -147,6 +150,20 @@ export class ResidentsController {
     return this.service.create(dto);
   }
 
+  /** Registra como residente a alguien que estaba como visitante. */
+  @Post('from-visitor/:visitorId')
+  @UseGuards(AdminOrPorterGuard)
+  createFromVisitor(@Param('visitorId', ParseUUIDPipe) visitorId: string, @Body() dto: ResidentFromVisitorDto) {
+    return this.service.createFromVisitor(visitorId, dto);
+  }
+
+  /** Inhabilita al residente y lo deja registrado como visitante. */
+  @Post(':id/to-visitor')
+  @UseGuards(AdminOrPorterGuard)
+  convertToVisitor(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ResidentToVisitorDto) {
+    return this.service.convertToVisitor(id, dto.reason);
+  }
+
   @Patch(':id')
   @UseGuards(AdminOrPorterGuard)
   update(@Param('id') id: string, @Body() dto: UpdateResidentDto) {
@@ -155,14 +172,14 @@ export class ResidentsController {
 
   @Patch(':id/deactivate')
   @UseGuards(AdminOrPorterGuard)
-  deactivate(@Param('id') id: string) {
-    return this.service.deactivate(id);
+  deactivate(@Param('id') id: string, @Body() dto: ChangeStatusDto) {
+    return this.service.deactivate(id, dto?.reason);
   }
 
   @Patch(':id/activate')
   @UseGuards(AdminOrPorterGuard)
-  activate(@Param('id') id: string) {
-    return this.service.activate(id);
+  activate(@Param('id') id: string, @Body() dto: ChangeStatusDto) {
+    return this.service.activate(id, dto?.reason);
   }
 
   // El portero necesita asignar apartamento como parte del alta de residente.
