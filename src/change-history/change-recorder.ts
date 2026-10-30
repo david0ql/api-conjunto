@@ -119,7 +119,7 @@ const TRACKED = new Map<EntityClass, TrackedEntity>([
         notes: { label: 'Notas' },
         isActive: {
           label: 'Estado',
-          format: yesNo('De residente', 'Pasado a visitante'),
+          format: yesNo('Habilitado', 'Inhabilitado'),
         },
       },
     },

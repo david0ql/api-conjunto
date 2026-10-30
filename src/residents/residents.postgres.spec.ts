@@ -251,18 +251,21 @@ describePg('Residents (PostgreSQL)', () => {
     expect((await porteria.searchByPlate('KJR 809')).kind).toBe('not_found');
     expect((await vehicles.findByApartment(apt569.id)).map((v) => v.id)).not.toContain(truck.id);
     expect((await vehicles.findOne(truck.id)).isActive).toBe(false);
+    // Tampoco sale en la lista de vehículos, salvo que se busque la placa.
+    expect((await vehicles.findAll({})).data.map((v) => v.id)).not.toContain(truck.id);
+    expect((await vehicles.findAll({ search: 'KJR' })).data.map((v) => v.id)).toContain(truck.id);
     // Registrarla de nuevo como residente explica qué pasa en vez de un error genérico.
     await expect(
-      vehicles.create({ apartmentId: apt569.id, vehicleBrandId: brand.id, plate: 'KJR 809' }, admin.id),
-    ).rejects.toThrow('La placa KJR 809 está registrada como pasada a visitante (antes de Torre 9 · Apt. 569)');
+      vehicles.create({ apartmentId: apt569.id, vehicleBrandId: brand.id, vehicleType: 'car', plate: 'KJR 809' }, admin.id),
+    ).rejects.toThrow('La placa KJR 809 está inhabilitada (antes de Torre 9 · Apt. 569)');
 
     await asAdmin(() => vehicles.reactivate(truck.id, 'Se pasó por error'));
     expect((await porteria.searchByPlate('KJR809')).kind).toBe('resident_vehicle');
 
     const logs = await logsFor('resident_vehicle', truck.id);
     expect(logs.map((l) => [l.changes[0].to, l.reason, l.actorName])).toEqual([
-      ['Pasado a visitante', 'Es visitante, no vive en el apartamento', 'Aura Admin'],
-      ['De residente', 'Se pasó por error', 'Aura Admin'],
+      ['Inhabilitado', 'Es visitante, no vive en el apartamento', 'Aura Admin'],
+      ['Habilitado', 'Se pasó por error', 'Aura Admin'],
     ]);
   });
 });

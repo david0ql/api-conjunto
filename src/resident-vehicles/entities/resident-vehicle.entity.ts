@@ -50,9 +50,9 @@ export class ResidentVehicle {
   createdByEmployeeId: string | null;
 
   /**
-   * false = la placa ya no es de residente (p. ej. era de una visita y quedó
-   * mal registrada): portería deja de reconocerla como del apartamento, pero el
-   * registro no se borra y se puede volver a activar.
+   * false = inhabilitada (propietario anterior, o era de una visita):
+   * portería deja de reconocerla como del apartamento, pero el registro no se
+   * borra y se puede volver a habilitar.
    */
   @Column({ name: 'is_active', default: true })
   isActive: boolean;

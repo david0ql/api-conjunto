@@ -15,6 +15,8 @@ import { applyTokenSearch } from '../common/utils/search';
 interface VehicleFilters extends PaginationQueryDto {
   search?: string;
   apartmentId?: string;
+  /** 'true' (por defecto), 'false' o 'all'. Al buscar por texto salen todas. */
+  isActive?: string;
 }
 
 @Injectable()
@@ -43,6 +45,12 @@ export class ResidentVehiclesService {
     ]);
     if (query.apartmentId) {
       qb.andWhere('rv.apartment_id = :apartmentId', { apartmentId: query.apartmentId });
+    }
+    // Las inhabilitadas (propietario anterior, visita...) no se listan salvo que
+    // se pidan o se busque una placa puntual.
+    const isActive = query.isActive || (query.search?.trim() ? 'all' : 'true');
+    if (isActive !== 'all') {
+      qb.andWhere('rv.is_active = :isActive', { isActive: isActive === 'true' });
     }
 
     const [data, total] = await qb.orderBy('rv.createdAt', 'DESC').skip((page - 1) * limit).take(limit).getManyAndCount();
@@ -111,7 +119,7 @@ export class ResidentVehiclesService {
       const number = existing.apartment?.number;
       const was = number ? ` (antes de ${tower ? `${tower} · ` : ''}Apt. ${number})` : '';
       throw new ConflictException(
-        `La placa ${normalized} está registrada como pasada a visitante${was}. Búsquela en Vehículos y vuelva a activarla en el apartamento correcto.`,
+        `La placa ${normalized} está inhabilitada${was}. Búsquela en Vehículos y vuelva a habilitarla en el apartamento correcto.`,
       );
     }
 
@@ -180,13 +188,13 @@ export class ResidentVehiclesService {
   }
 
   /**
-   * La placa deja de ser de residente (era de una visita): portería ya no la
-   * reconoce como del apartamento y la registra como visita. No se borra nada;
-   * queda en el historial con motivo y se puede volver a activar.
+   * Inhabilita la placa (propietario anterior, o era de una visita): portería ya
+   * no la reconoce como del apartamento y deja de salir en su lista. No se borra
+   * nada; queda en el historial con motivo y se puede volver a habilitar.
    */
   async convertToVisitor(id: string, reason: string): Promise<ResidentVehicle> {
     const item = await this.findOne(id);
-    if (!item.isActive) throw new BadRequestException('La placa ya está como visitante');
+    if (!item.isActive) throw new BadRequestException('La placa ya está inhabilitada');
     setChangeReason(reason);
     await trackedUpdate(this.repository, id, { isActive: false });
     return this.findOne(id);
@@ -195,7 +203,7 @@ export class ResidentVehiclesService {
   /** Vuelve a ser vehículo de residente, en el mismo apartamento o en otro. */
   async reactivate(id: string, reason: string, apartmentId?: string): Promise<ResidentVehicle> {
     const item = await this.findOne(id);
-    if (item.isActive) throw new BadRequestException('La placa ya es de residente');
+    if (item.isActive) throw new BadRequestException('La placa ya está habilitada');
     if (apartmentId && apartmentId !== item.apartmentId) {
       const apartmentExists = await this.repository.manager.exists(Apartment, { where: { id: apartmentId } });
       if (!apartmentExists) throw new NotFoundException('Apartamento no encontrado');

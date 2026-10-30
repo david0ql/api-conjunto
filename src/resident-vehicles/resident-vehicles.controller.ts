@@ -23,8 +23,9 @@ export class ResidentVehiclesController {
     @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('apartmentId') apartmentId?: string,
+    @Query('isActive') isActive?: string,
   ) {
-    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, apartmentId });
+    return this.service.findAll({ page: page ? +page : 1, limit: limit ? +limit : 15, search, apartmentId, isActive });
   }
 
   @Get('by-apartment/:apartmentId')
